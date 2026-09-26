@@ -11,7 +11,12 @@ const API = {
     const ct = res.headers.get('content-type') || '';
     const data = ct.includes('application/json') ? await res.json() : null;
     if (!res.ok) {
-      const msg = data?.detail || data?.error?.message || `HTTP ${res.status}`;
+      let msg = data?.detail || data?.error?.message;
+      if (!msg) {
+        msg = res.status >= 500 
+          ? 'An unexpected server error occurred. Please try again later.' 
+          : `Error (HTTP ${res.status})`;
+      }
       throw Object.assign(new Error(msg), { status: res.status, data });
     }
     return data;
