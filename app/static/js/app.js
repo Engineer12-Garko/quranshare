@@ -12,6 +12,11 @@ const API = {
     const data = ct.includes('application/json') ? await res.json() : null;
     if (!res.ok) {
       let msg = data?.detail || data?.error?.message;
+      if (Array.isArray(msg)) {
+        msg = msg.map(e => e.msg || JSON.stringify(e)).join(', ');
+      } else if (msg && typeof msg === 'object') {
+        msg = JSON.stringify(msg);
+      }
       if (!msg) {
         msg = res.status >= 500 
           ? 'An unexpected server error occurred. Please try again later.' 
