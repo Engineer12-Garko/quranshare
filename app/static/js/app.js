@@ -832,6 +832,51 @@ function renderProgressWidget(p) {
   `;
 }
 
+
+/* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
+/* HISTORY                                                                    */
+/* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
+async function renderHistory(app) {
+  const user = await getUser();
+  if (!user) { navigate('/login'); return; }
+
+  app.innerHTML = shell('#/history', user, `
+    <div class="page-title">≡ƒôï Posting History</div>
+    <div id="hist-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
+    <div id="hist-pag"></div>
+  `);
+  bindLogout(app);
+
+  let skip = 0; const limit = 20;
+
+  async function loadHistory() {
+    const area = app.querySelector('#hist-area');
+    area.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
+    try {
+      const data = await API.get(`/history?skip=${skip}&limit=${limit}`);
+      if (data.items.length === 0) {
+        area.innerHTML = `<div class="empty-state"><div class="empty-icon">≡ƒô¡</div><p>No posting history yet.<br>Share a reminder to get started!</p></div>`;
+      } else {
+        area.innerHTML = data.items.map(item => `
+          <div class="history-item">
+            <div class="history-thumb">≡ƒÄ¼</div>
+            <div class="history-info">
+              <div class="history-title">${escHtml(item.video_title || 'Video')}</div>
+              <div class="history-date">${fmtDate(item.posted_at)} ${fmtTime(item.posted_at)}</div>
+            </div>
+            <span class="badge ${item.action === 'posted' ? 'badge-posted' : 'badge-shared'}">
+              ${item.action === 'posted' ? 'Posted' : 'Shared'}
+            </span>
+          </div>`).join('');
+      }
+      renderPagination(app.querySelector('#hist-pag'), data.total, skip, limit, s => { skip = s; loadHistory(); });
+    } catch (err) {
+      area.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+    }
+  }
+  loadHistory();
+}
+
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* PROFILE                                                                    */
 /* ══════════════════════════════════════════════════════════════════════════ */
