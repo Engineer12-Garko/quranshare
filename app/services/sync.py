@@ -46,33 +46,28 @@ def sync_drive(db: Session) -> dict:
     added = updated = deactivated = failed = 0
     errors: list[str] = []
     seen_drive_ids: set[str] = set()
+    
+    # Breadth-first search queue to crawl folders recursively
+    folders_to_process = [root_folder]
 
-    # List all subfolders (one per category) under the root folder
-    try:
-        subfolders = drive.list_subfolders(root_folder)
-    except Exception as exc:
-        return {"success": False, "error": f"Failed to list root folder: {exc}"}
-
-    for folder in subfolders:
-        folder_name = folder["name"]
-        folder_id = folder["id"]
+    while folders_to_process:
+        current_folder = folders_to_process.pop(0)
         
-        folder_name_lower = folder_name.lower()
-        if folder_name_lower in category_map:
-            category_id = category_map[folder_name_lower]
-        else:
-            # Auto-create the category if it doesn't exist
-            new_cat = Category(name=folder_name, description=f"Imported from {folder_name}", is_active=True)
-            db.add(new_cat)
-            db.commit()
-            db.refresh(new_cat)
-            category_map[folder_name_lower] = new_cat.id
-            category_id = new_cat.id
-
+        # 1. Fetch subfolders of current folder and add to queue
         try:
-            files = drive.list_mp4s_in_folder(folder_id)
+            subfolders = drive.list_subfolders(current_folder)
+            for sf in subfolders:
+                folders_to_process.append(sf["id"])
         except Exception as exc:
-            errors.append(f"Folder '{folder_name}': {exc}")
+            errors.append(f"Failed to list subfolders for {current_folder}: {exc}")
+            failed += 1
+            continue
+            
+        # 2. Fetch MP4s in current folder
+        try:
+            files = drive.list_mp4s_in_folder(current_folder)
+        except Exception as exc:
+            errors.append(f"Folder '{current_folder}': {exc}")
             failed += 1
             continue
 
@@ -85,7 +80,7 @@ def sync_drive(db: Session) -> dict:
                     # Update existing record (O(1) lookup)
                     video = existing[drive_id]
                     video.title = f.get("name", video.title)
-                    video.category_id = category_id
+                    video.category_id = None # We no longer use categories
                     video.drive_web_view_link = f.get("webViewLink")
                     video.drive_download_link = f.get("webContentLink")
                     video.is_active = True
@@ -95,7 +90,7 @@ def sync_drive(db: Session) -> dict:
                     video = Video(
                         drive_file_id=drive_id,
                         title=f.get("name", drive_id),
-                        category_id=category_id,
+                        category_id=None,
                         drive_web_view_link=f.get("webViewLink"),
                         drive_download_link=f.get("webContentLink"),
                         is_active=True,
@@ -105,6 +100,8 @@ def sync_drive(db: Session) -> dict:
             except Exception as exc:
                 errors.append(f"File '{drive_id}': {exc}")
                 failed += 1
+
+    # Deactivate videos whose Drive file is gone (O(n) scan)
 
     # Deactivate videos whose Drive file is gone (O(n) scan)
     for drive_id, video in existing.items():

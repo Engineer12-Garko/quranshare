@@ -1032,7 +1032,31 @@ async function renderAdmin(app) {
   });
 
   if (user.role === 'admin') {
+    
+    app.querySelector('#download-csv-btn')?.addEventListener('click', async () => {
+      const btn = app.querySelector('#download-csv-btn');
+      btn.innerHTML = '<span class="material-symbols-outlined text-[18px] animate-spin">sync</span> Downloading...';
+      try {
+        const token = localStorage.getItem('token');
+        const resp = await fetch('/api/v1/admin/users/csv', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!resp.ok) throw new Error("Failed to export CSV");
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "users_export.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e) {
+        alert(e.message);
+      }
+      btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">download</span> Export CSV';
+    });
+    
     async function loadUsers() {
+
       try {
         const users = await API.get('/admin/users');
         const tbody = users.map(u => `
