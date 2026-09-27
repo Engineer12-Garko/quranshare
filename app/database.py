@@ -3,18 +3,12 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from app.config import settings
 
-# pool_size and max_overflow are not supported by SQLite (used in tests)
-_is_sqlite = settings.database_url.startswith("sqlite")
-_engine_kwargs: dict = {"pool_pre_ping": True}
-if not _is_sqlite:
-    _engine_kwargs["pool_size"] = 5
-    _engine_kwargs["max_overflow"] = 10
-else:
-    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+# Force Neon Postgres connection string, overriding any Vercel environment variables
+_is_sqlite = False
+_engine_kwargs: dict = {"pool_pre_ping": True, "pool_size": 5, "max_overflow": 10}
 
-db_url = settings.database_url
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+db_url = "postgresql://quranshare_owner:npg_8goRHeI7PLld@ep-royal-band-b57qq2yr-pooler.c-7.us-east-2.aws.neon.tech/quranshare?sslmode=require&channel_binding=require"
+
 
 engine = create_engine(db_url, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
