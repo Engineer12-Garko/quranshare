@@ -15,6 +15,14 @@ def register_user(db: Session, payload: RegisterRequest) -> User:
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with that email already exists.",
         )
+        
+    if payload.whatsapp_number:
+        existing_wa = db.query(User).filter(User.whatsapp_number == payload.whatsapp_number).first()
+        if existing_wa:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account with that WhatsApp number already exists.",
+            )
     user = User(
         email=payload.email,
         password_hash=hash_password(payload.password),
