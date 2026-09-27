@@ -1,11 +1,11 @@
 """Admin routes — Drive sync and user management."""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies.auth import require_role
 from app.models.user import User
-from app.schemas.user import UserResponse
+from app.schemas.user import UserResponse, AdminUpdateUserRequest
 from app.services.sync import sync_drive
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -36,3 +36,41 @@ def list_users(
 ):
     """Return all registered users. Admin only."""
     return db.query(User).order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+
+
+@router.patch("/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: int,
+    req: AdminUpdateUserRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(_admin_only),
+):
+    """Update a user's role or status. Admin only."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    
+    if req.role is not None:
+        user.role = req.role
+    if req.is_active is not None:
+        user.is_active = req.is_active
+        
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(_admin_only),
+):
+    """Delete a user. Admin only."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+        
+    db.delete(user)
+    db.commit()
+    return None

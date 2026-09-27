@@ -31,6 +31,11 @@ class UpdateProfileRequest(BaseModel):
     whatsapp_number: str | None = Field(default=None, max_length=20)
 
 
+class AdminUpdateUserRequest(BaseModel):
+    role: Literal["user", "curator", "admin"] | None = None
+    is_active: bool | None = None
+
+
 class UserResponse(BaseModel):
     id: int
     email: str

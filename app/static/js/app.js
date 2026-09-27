@@ -889,23 +889,51 @@ async function renderAdmin(app) {
   });
 
   if (user.role === 'admin') {
-    try {
-      const users = await API.get('/admin/users');
-      const tbody = users.map(u => `
-        <tr>
-          <td>${escHtml(u.display_name)}</td>
-          <td>${escHtml(u.email)}</td>
-          <td><span class="role-badge role-${u.role}">${u.role}</span></td>
-          <td>${u.is_active ? '✅' : '❌'}</td>
-          <td class="text-muted">${fmtDate(u.created_at)}</td>
-        </tr>`).join('');
-      app.querySelector('#users-area').innerHTML = `
-        <table class="users-table">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Joined</th></tr></thead>
-          <tbody>${tbody}</tbody>
-        </table>`;
-    } catch (err) {
-      app.querySelector('#users-area').innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+    async function loadUsers() {
+      try {
+        const users = await API.get('/admin/users');
+        const tbody = users.map(u => `
+          <tr>
+            <td>${escHtml(u.display_name)}</td>
+            <td>${escHtml(u.email)}</td>
+            <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+            <td>${u.is_active ? '✅' : '❌'}</td>
+            <td class="text-muted">${fmtDate(u.created_at)}</td>
+            <td>
+              <button class="btn btn-secondary btn-sm edit-u" data-id="${u.id}" data-role="${u.role}" data-active="${u.is_active}">Edit</button>
+              <button class="btn btn-danger btn-sm del-u" data-id="${u.id}">Del</button>
+            </td>
+          </tr>`).join('');
+        app.querySelector('#users-area').innerHTML = `
+          <table class="users-table">
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Joined</th><th>Actions</th></tr></thead>
+            <tbody>${tbody}</tbody>
+          </table>`;
+
+        app.querySelectorAll('.edit-u').forEach(b => b.addEventListener('click', async () => {
+          const newRole = prompt('Enter new role (user, curator, admin):', b.dataset.role);
+          if (!newRole) return;
+          const isActive = confirm('Should this user be active? (OK = yes, Cancel = no)');
+          b.disabled = true;
+          try {
+            await API.patch(`/admin/users/${b.dataset.id}`, { role: newRole, is_active: isActive });
+            loadUsers();
+          } catch (e) { alert(e.message); b.disabled = false; }
+        }));
+
+        app.querySelectorAll('.del-u').forEach(b => b.addEventListener('click', async () => {
+          if (!confirm('Are you sure you want to delete this user?')) return;
+          b.disabled = true;
+          try {
+            await API.delete(`/admin/users/${b.dataset.id}`);
+            loadUsers();
+          } catch (e) { alert(e.message); b.disabled = false; }
+        }));
+      } catch (err) {
+        app.querySelector('#users-area').innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+      }
     }
+    loadUsers();
   }
 }
+
