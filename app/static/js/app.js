@@ -110,35 +110,84 @@ function clearAlert(container) {
   container.querySelector('.alert')?.remove();
 }
 
-/* ── Nav HTML ────────────────────────────────────────────────────────────── */
+function headerHtml(active, user) {
+  if (active === '#/dashboard') {
+    return `
+      <header class="fixed top-0 inset-x-0 z-50 bg-surface/85 backdrop-blur-xl pt-safe shadow-[0_1px_12px_rgba(14,59,46,0.04)]">
+        <div class="h-16 px-space-md flex items-center justify-between gap-space-sm">
+          <div class="flex items-center gap-space-sm min-w-0">
+            <button aria-label="Go back" class="w-11 h-11 -ml-1.5 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors shrink-0" onclick="history.back()">
+              <span class="material-symbols-outlined text-[24px]">arrow_back</span>
+            </button>
+            <img alt="QuranFlow Emblem Logo" class="h-7 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1UXcSMXmwXzqpHYydkhzU82UaqJNJtpyjLr5NmX6AA0XxAb2mPnEAouljylR41cqIhCtQVOTrgastVoW0LR-3muqnz87iZrQDsyt9yQwAhU0Yy7ydA5FS59sRhoyUVV6iCYRapB67jSC8rpSJy_JuFwwDZU1rmQztuY1x_4n5QyK7oNfSZuJRlrc7D4YnBDlLpnhGmEpo3hRWkUcnsPXzG4wKfqCu8SwMjRSzwe0XK1Sxl0Vp87WOMDmIUG"/>
+            <h1 class="font-headline-sm text-headline-sm text-primary tracking-tight truncate">Reflection Player</h1>
+          </div>
+          <div class="flex items-center gap-space-sm shrink-0">
+            <button aria-label="Share reflection" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors">
+              <span class="material-symbols-outlined text-[20px]">share</span>
+            </button>
+            <div class="relative flex items-center justify-center p-0.5 rounded-full bg-surface-container ring-1 ring-secondary/20">
+              <span class="material-symbols-outlined text-primary">person</span>
+            </div>
+          </div>
+        </div>
+      </header>
+    `;
+  }
+  return `
+    <header class="fixed top-0 inset-x-0 z-50 bg-surface/85 backdrop-blur-xl pt-safe shadow-[0_1px_12px_rgba(14,59,46,0.04)]">
+      <div class="h-16 px-space-md flex items-center justify-between gap-space-sm">
+        <div class="flex items-center gap-space-sm min-w-0">
+          <img alt="QuranFlow Emblem Logo" class="h-8 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1UXcSMXmwXzqpHYydkhzU82UaqJNJtpyjLr5NmX6AA0XxAb2mPnEAouljylR41cqIhCtQVOTrgastVoW0LR-3muqnz87iZrQDsyt9yQwAhU0Yy7ydA5FS59sRhoyUVV6iCYRapB67jSC8rpSJy_JuFwwDZU1rmQztuY1x_4n5QyK7oNfSZuJRlrc7D4YnBDlLpnhGmEpo3hRWkUcnsPXzG4wKfqCu8SwMjRSzwe0XK1Sxl0Vp87WOMDmIUG"/>
+          <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="font-headline-sm text-headline-sm text-primary tracking-tight truncate">QuranFlow</span>
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full bg-secondary/10 text-secondary font-label-sm text-[10px] uppercase font-semibold tracking-wider">Daily</span>
+            </div>
+            <span class="font-label-sm text-label-sm text-on-surface-variant truncate">Daily Reminders</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button aria-label="Notifications" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors relative">
+            <span class="material-symbols-outlined text-[22px]">notifications</span>
+          </button>
+          <div class="relative flex items-center justify-center p-0.5 rounded-full bg-surface-container ring-1 ring-secondary/20 cursor-pointer" id="logout-trigger">
+            <span class="material-symbols-outlined text-primary">person</span>
+          </div>
+        </div>
+      </div>
+    </header>
+  `;
+}
+
 function navHtml(active, user) {
   const links = [
-    { href: '#/dashboard', icon: '🏠', label: 'Home'     },
-    { href: '#/library',   icon: '📚', label: 'Library'  },
-    { href: '#/progress',  icon: '📊', label: 'Progress' },
-    { href: '#/history',   icon: '📋', label: 'History'  },
-    { href: '#/profile',   icon: '👤', label: 'Profile'  },
+    { href: '#/dashboard', icon: 'auto_awesome', label: 'Today' },
+    { href: '#/library',   icon: 'video_library', label: 'Library' },
+    { href: '#/progress',  icon: 'trending_up', label: 'Progress' },
   ];
   if (user?.role === 'admin' || user?.role === 'curator') {
-    links.push({ href: '#/admin', icon: '⚙️', label: 'Admin' });
+    links.push({ href: '#/admin', icon: 'tune', label: 'Curator' });
   }
   const li = links.map(l => `
-    <a href="${l.href}" class="${active === l.href ? 'active' : ''}">
-      <span class="nav-icon">${l.icon}</span>${l.label}
-    </a>`).join('');
+    <a href="${l.href}" class="flex flex-col items-center justify-center min-w-[64px] h-12 gap-0.5 transition-all ${active === l.href ? 'text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}" data-path="${l.label.toLowerCase()}">
+      <span class="material-symbols-outlined text-[24px]">${l.icon}</span>
+      <span class="font-label-sm text-label-sm leading-none">${l.label}</span>
+    </a>
+  `).join('');
+
   return `
-    <nav class="sidebar">
-      <div class="sidebar-logo">Quran<span>Flow</span></div>
-      <div class="sidebar-nav">${li}</div>
-      <div class="sidebar-footer">
-        <button class="btn btn-secondary btn-sm btn-full" id="logout-btn">Sign out</button>
+    <nav class="fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-4px_20px_-2px_rgba(14,59,46,0.06)]">
+      <div class="flex items-center justify-around h-16 px-2">
+        ${li}
       </div>
     </nav>
-    <nav class="bottom-nav"><div class="bottom-nav-inner">${li}</div></nav>`;
+  `;
 }
 
 function bindLogout(el) {
-  el.querySelector('#logout-btn')?.addEventListener('click', async () => {
+  el.querySelector('#logout-trigger')?.addEventListener('click', async () => {
+    if(!confirm("Sign out?")) return;
     try { await API.post('/auth/logout'); } catch {}
     clearUser();
     navigate('/');
@@ -147,10 +196,12 @@ function bindLogout(el) {
 
 function shell(active, user, innerHtml) {
   return `
-    <div class="app-shell">
-      ${navHtml(active, user)}
-      <main class="main-content">${innerHtml}</main>
-    </div>`;
+    ${headerHtml(active, user)}
+    <main class="flex flex-col relative w-full pt-16 pb-24 bg-surface min-h-screen">
+      ${innerHtml}
+    </main>
+    ${navHtml(active, user)}
+  `;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -314,80 +365,54 @@ async function renderDashboard(app) {
   const user = await getUser();
   if (!user) { navigate('/login'); return; }
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-
   app.innerHTML = shell('#/dashboard', user, `
-    <div class="greeting">${greeting}, ${escHtml(user.display_name)} 👋</div>
-    <div class="greeting-sub">Here is today's reminder for you.</div>
-
-    <div id="reminder-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
-
-    <div class="mt-24">
-      <div class="section-title">This Week</div>
-      <div id="progress-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
+    <div id="reminder-area" class="h-full w-full flex items-center justify-center">
+      <div class="loading-overlay"><div class="spinner"></div></div>
     </div>
   `);
   bindLogout(app);
 
-  // Load reminder and progress in parallel
-  const [reminderResult, progressResult] = await Promise.allSettled([
-    API.get('/reminders/today'),
-    API.get('/progress/weekly'),
-  ]);
+  const reminderResult = await API.get('/reminders/today').catch(e => e);
 
-  // Render reminder
   const ra = app.querySelector('#reminder-area');
-  if (reminderResult.status === 'fulfilled') {
-    const v = reminderResult.value;
+  if (reminderResult.id) {
+    const v = reminderResult;
     ra.innerHTML = `
-      <div class="card" style="padding: 0; overflow: hidden; border: none; box-shadow: 0 12px 32px rgba(12,66,40,0.12);">
-        <div class="reminder-wrap" style="grid-template-columns: 1fr; gap: 0;">
-          <div class="video-player-wrap" style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; max-height: 55vh; border: none; box-shadow: none;">
-            <div style="position: absolute; top: 16px; left: 16px; background: var(--gold); color: #fff; padding: 4px 14px; border-radius: 99px; font-size: .75rem; font-weight: 800; z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">✨ Fresh Today</div>
-            <video id="dash-video" controls preload="metadata"
-              src="/api/v1/videos/${v.id}/stream"
-              poster="" style="width: 100%; height: 100%; object-fit: cover;">
-              Your browser does not support video playback.
-            </video>
-          </div>
-          <div class="reminder-actions" style="border: none; border-top-left-radius: 0; border-top-right-radius: 0; background: var(--surface); padding: 24px; box-shadow: none;">
-            <div style="text-align: center; margin-bottom: 12px;">
-              <div class="video-title" style="font-size: 1.25rem; margin-bottom: 8px;">${escHtml(v.title)}</div>
-              <div class="video-meta" style="justify-content: center; font-size: .85rem;">
-                ${v.category_name ? `<span>📖 ${escHtml(v.category_name)}</span>` : ''}
-                ${v.duration_seconds ? `<span>⏱ ${fmtDuration(v.duration_seconds)}</span>` : ''}
-              </div>
+      <div class="relative w-full max-w-[480px] aspect-[9/16] bg-black sm:rounded-[32px] overflow-hidden shadow-2xl flex flex-col justify-end mx-auto my-auto sm:my-4 h-full sm:h-auto sm:max-h-[85vh]">
+        <video id="dash-video" class="absolute inset-0 w-full h-full object-cover" controls preload="metadata" src="/api/v1/videos/${v.id}/stream"></video>
+        
+        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-32 pb-6 px-space-md flex flex-col justify-end pointer-events-none">
+          <div class="pointer-events-auto">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">✨ Fresh Today</span>
+              ${v.category_name ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">${escHtml(v.category_name)}</span>` : ''}
+              ${v.duration_seconds ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">⏱ ${fmtDuration(v.duration_seconds)}</span>` : ''}
             </div>
-            <button class="whatsapp-btn" id="share-btn" data-id="${v.id}" style="padding: 16px; font-size: 1.05rem;">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-              Share to WhatsApp Status
-            </button>
-            <button class="btn btn-secondary mark-posted-btn" id="posted-btn" data-id="${v.id}" disabled style="padding: 16px; font-size: 1.05rem;">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> 
-              Mark as Posted Today
-            </button>
-            <p class="text-muted" id="posted-hint" style="text-align: center; font-size: .85rem; margin-top: 4px; font-weight: 500;">Share the video first to verify.</p>
+            
+            <h2 class="text-surface font-display-lg-mobile mb-4 text-shadow-sm leading-tight">${escHtml(v.title)}</h2>
+            
+            <div class="flex items-center gap-space-sm">
+              <button id="share-btn" data-id="${v.id}" class="flex-1 h-14 bg-primary text-on-primary rounded-full font-label-lg flex items-center justify-center gap-2 shadow-[0_8px_16px_rgba(0,36,26,0.2)] hover:bg-primary/90 transition-colors">
+                <span class="material-symbols-outlined text-[20px]">send</span> Share
+              </button>
+              <button id="posted-btn" data-id="${v.id}" disabled class="flex-1 h-14 bg-surface/20 backdrop-blur-md text-surface rounded-full font-label-lg flex items-center justify-center gap-2 border border-surface/30 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface/30 transition-colors">
+                <span class="material-symbols-outlined text-[20px]">check_circle</span> Posted
+              </button>
+            </div>
+            
+            <p id="posted-hint" class="text-surface/80 text-center font-label-sm mt-3">Share to WhatsApp to mark as posted</p>
           </div>
         </div>
-      </div>`;
-
+      </div>
+    `;
     bindShareAndPost(app, v.id, v.title);
   } else {
-    const status = reminderResult.reason?.status;
+    const status = reminderResult.status;
     if (status === 404) {
-      ra.innerHTML = `<div class="card empty-state"><div class="empty-icon">📭</div><p>No videos in the library yet. Check back soon!</p></div>`;
+      ra.innerHTML = `<div class="p-4 text-center mt-20"><div class="text-4xl mb-4">📭</div><p>No videos in the library yet. Check back soon!</p></div>`;
     } else {
-      ra.innerHTML = `<div class="alert alert-error">Could not load today's reminder: ${escHtml(reminderResult.reason?.message || 'Unknown error')}</div>`;
+      ra.innerHTML = `<div class="p-4 text-center mt-20"><p class="text-error">Could not load today's reminder: ${escHtml(reminderResult.message || 'Unknown error')}</p></div>`;
     }
-  }
-
-  // Render weekly progress
-  const pa = app.querySelector('#progress-area');
-  if (progressResult.status === 'fulfilled') {
-    pa.innerHTML = renderProgressWidget(progressResult.value);
-  } else {
-    pa.innerHTML = `<p class="text-muted">Progress unavailable.</p>`;
   }
 }
 
@@ -727,86 +752,84 @@ async function renderProgress(app) {
   if (!user) { navigate('/login'); return; }
 
   app.innerHTML = shell('#/progress', user, `
-    <div class="page-title">📊 Weekly Progress</div>
-    <div id="prog-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
+    <div class="px-space-md mt-6">
+      <div class="flex items-end justify-between mb-space-sm">
+        <h2 class="font-headline-lg text-headline-lg text-primary tracking-tight">Your Journey</h2>
+      </div>
+    </div>
+    <div id="prog-area" class="px-space-md"><div class="loading-overlay"><div class="spinner"></div></div></div>
   `);
   bindLogout(app);
 
   try {
     const p = await API.get('/progress/weekly');
-    app.querySelector('#prog-area').innerHTML = `
-      <div class="card">
-        ${renderProgressWidget(p)}
-        <p class="text-muted mt-16">
-          Keep sharing daily reminders to build your streak. Only videos you <strong>Mark as Posted</strong> count.
-        </p>
+    app.querySelector('#prog-area').innerHTML = renderProgressWidget(p) + `
+      <div class="mt-8">
+        <h3 class="font-headline-md text-on-surface mb-4">Recent History</h3>
+        <p class="text-on-surface-variant text-body-sm">Keep sharing daily reminders to build your streak. Only videos you mark as posted count.</p>
       </div>`;
   } catch (err) {
-    app.querySelector('#prog-area').innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+    app.querySelector('#prog-area').innerHTML = `<div class="p-4 bg-error-container text-on-error-container rounded-xl">${escHtml(err.message)}</div>`;
   }
 }
 
 function renderProgressWidget(p) {
   const pct = Math.round((p.total_posted / p.goal) * 100);
-  const today = new Date().toISOString().slice(0, 10);
-  const days = p.days.map(d => {
-    const isToday = d.date === today;
-    const initial = dayName(d.date)[0];
-    return `<div class="day-chip ${d.posted ? 'posted' : ''} ${isToday && !d.posted ? 'today' : ''}" title="${d.date}">
-      ${d.posted ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' : initial}
-    </div>`;
-  }).join('');
-  return `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <div class="section-title" style="margin: 0;">Weekly Posting Goal</div>
-      <div style="font-weight: 800; color: var(--gold);">${pct}%</div>
-    </div>
-    <div class="progress-bar-wrap"><div class="progress-bar" style="width:${Math.min(pct,100)}%"></div></div>
-    <div class="progress-days">${days}</div>`;
-}
+  
+  // Weekly ring representation
+  const radius = 36;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (pct / 100) * circumference;
 
-/* ══════════════════════════════════════════════════════════════════════════ */
-/* HISTORY                                                                    */
-/* ══════════════════════════════════════════════════════════════════════════ */
-async function renderHistory(app) {
-  const user = await getUser();
-  if (!user) { navigate('/login'); return; }
-
-  app.innerHTML = shell('#/history', user, `
-    <div class="page-title">📋 Posting History</div>
-    <div id="hist-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
-    <div id="hist-pag"></div>
-  `);
-  bindLogout(app);
-
-  let skip = 0; const limit = 20;
-
-  async function loadHistory() {
-    const area = app.querySelector('#hist-area');
-    area.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
-    try {
-      const data = await API.get(`/history?skip=${skip}&limit=${limit}`);
-      if (data.items.length === 0) {
-        area.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><p>No posting history yet.<br>Share a reminder to get started!</p></div>`;
-      } else {
-        area.innerHTML = data.items.map(item => `
-          <div class="history-item">
-            <div class="history-thumb">🎬</div>
-            <div class="history-info">
-              <div class="history-title">${escHtml(item.video_title || 'Video')}</div>
-              <div class="history-date">${fmtDate(item.posted_at)} ${fmtTime(item.posted_at)}</div>
-            </div>
-            <span class="badge ${item.action === 'posted' ? 'badge-posted' : 'badge-shared'}">
-              ${item.action === 'posted' ? 'Posted' : 'Shared'}
-            </span>
-          </div>`).join('');
-      }
-      renderPagination(app.querySelector('#hist-pag'), data.total, skip, limit, s => { skip = s; loadHistory(); });
-    } catch (err) {
-      area.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
-    }
+  let daysHtml = '';
+  const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  
+  // simple mock for the days (assuming we just show 7 empty/filled circles)
+  for (let i = 0; i < 7; i++) {
+    const isPosted = i < p.total_posted;
+    const isToday = i === p.total_posted; // basic highlight
+    
+    daysHtml += `
+      <div class="flex flex-col items-center gap-1.5">
+        <div class="w-8 h-8 rounded-full flex items-center justify-center transition-all ${isPosted ? 'bg-secondary text-on-secondary shadow-md scale-110 ring-2 ring-secondary/20' : isToday ? 'bg-surface-container ring-1 ring-outline text-on-surface' : 'bg-surface-container text-on-surface-variant'}">
+          ${isPosted ? '<span class="material-symbols-outlined text-[16px]">check</span>' : '<span class="font-label-sm">'+dayNames[i][0]+'</span>'}
+        </div>
+        <span class="font-label-sm text-[10px] ${isToday ? 'text-primary font-bold' : 'text-on-surface-variant'}">${dayNames[i]}</span>
+      </div>`;
   }
-  loadHistory();
+
+  return `
+    <div class="bg-surface-container-lowest rounded-3xl p-space-md shadow-[0_8px_24px_rgba(14,59,46,0.08)] ring-1 ring-surface-container-highest relative overflow-hidden">
+      <!-- Decorative background element -->
+      <div class="absolute -right-12 -top-12 w-40 h-40 bg-secondary-fixed/30 rounded-full blur-3xl mix-blend-multiply"></div>
+      
+      <div class="flex items-center gap-space-md relative z-10">
+        <!-- Circular Progress Ring -->
+        <div class="relative w-24 h-24 shrink-0 flex items-center justify-center">
+          <svg class="w-full h-full transform -rotate-90" viewBox="0 0 80 80">
+            <circle class="text-surface-container-highest stroke-current" cx="40" cy="40" r="36" stroke-width="6" fill="transparent"></circle>
+            <circle class="text-primary stroke-current transition-all duration-1000 ease-out" cx="40" cy="40" r="36" stroke-width="6" fill="transparent" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeDashoffset}"></circle>
+          </svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center">
+            <span class="font-headline-md text-primary leading-none mb-0.5">${p.total_posted}<span class="text-body-sm text-on-surface-variant font-normal">/${p.goal}</span></span>
+            <span class="font-label-sm text-[10px] text-on-surface-variant uppercase tracking-wider">Days</span>
+          </div>
+        </div>
+        
+        <div class="flex flex-col">
+          <h3 class="font-headline-sm text-on-surface mb-1">Weekly Goal</h3>
+          <p class="font-body-sm text-on-surface-variant leading-relaxed">You've shared ${p.total_posted} reminders this week. Keep up the momentum!</p>
+        </div>
+      </div>
+      
+      <!-- 7-Day Tracker -->
+      <div class="mt-6 pt-5 border-t border-surface-container-highest">
+        <div class="flex justify-between items-end px-1 relative z-10">
+          ${daysHtml}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */
