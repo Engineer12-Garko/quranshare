@@ -1,11 +1,11 @@
 """
-Tests for auth routes: /register, /login, /logout, /me.
+Tests for auth routes: /register, /login, /logout, /me, /activate.
 """
 from app.models.user import User
 from app.utils.security import hash_password
 
 
-# ── helpers ────────────────────────────────────────────────────────────────────
+# ── helpers ────────────────────────────────────────────────────────────
 
 def _register(client, email="test@example.com", password="Secret123", display_name="Test User"):
     return client.post(
@@ -34,7 +34,28 @@ def _seed_user(db, email="seeded@example.com", password="Secret123", role="user"
     return user
 
 
-# ── register ───────────────────────────────────────────────────────────────────
+def _seed_admin(db):
+    """Seed an admin user for role-based access tests."""
+    admin = User(
+        email="admin@test.com",
+        password_hash=hash_password("Secret123"),
+        display_name="Admin",
+        role="admin",
+        is_active=True,
+    )
+    db.add(admin)
+    db.flush()
+    return admin
+
+
+def _set_session(client, user_id):
+    from itsdangerous import URLSafeSerializer
+    from app.config import settings
+    s = URLSafeSerializer(settings.secret_key, salt="session")
+    client.cookies.set("session", s.dumps({"user_id": user_id}))
+
+
+# ── register ───────────────────────────────────────────────────────────
 
 def test_register_creates_user(client):
     resp = _register(client)
@@ -81,7 +102,7 @@ def test_register_no_digit_returns_422(client):
     assert resp.status_code == 422
 
 
-# ── login ──────────────────────────────────────────────────────────────────────
+# ── login ──────────────────────────────────────────────────────────────
 
 def test_login_success(client, db):
     _seed_user(db)
@@ -110,7 +131,7 @@ def test_login_inactive_user_returns_403(client, db):
     assert resp.status_code == 403
 
 
-# ── logout ─────────────────────────────────────────────────────────────────────
+# ── logout ─────────────────────────────────────────────────────────────
 
 def test_logout_clears_cookie(client):
     _register(client)
@@ -118,7 +139,7 @@ def test_logout_clears_cookie(client):
     assert resp.status_code == 204
 
 
-# ── me ─────────────────────────────────────────────────────────────────────────
+# ── me ─────────────────────────────────────────────────────────────────
 
 def test_me_returns_current_user(client):
     _register(client, email="me@example.com")
@@ -130,3 +151,61 @@ def test_me_returns_current_user(client):
 def test_me_without_session_returns_401(client):
     resp = client.get("/api/v1/auth/me")
     assert resp.status_code == 401
+
+
+# ── activate (new name-only activation) ────────────────────────────────
+
+def test_activate_creates_user_with_name_only(client, db):
+    """Activation with just a name creates a user with role='user'."""
+    resp = client.post("/api/v1/auth/activate", json={"name": "New User"})
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["display_name"] == "New User"
+    assert data["role"] == "user"
+
+
+def test_activate_sets_session_cookie(client):
+    """Activation sets the session cookie."""
+    resp = client.post("/api/v1/auth/activate", json={"name": "Cookie User"})
+    assert resp.status_code == 201
+    assert "session" in resp.cookies
+
+
+def test_activate_rejects_empty_name(client):
+    """Empty name is rejected."""
+    resp = client.post("/api/v1/auth/activate", json={"name": ""})
+    assert resp.status_code == 422
+
+
+def test_activate_establishes_authentication(client, db):
+    """Activated user can access /auth/me with their session."""
+    resp = client.post("/api/v1/auth/activate", json={"name": "Auth User"})
+    assert resp.status_code == 201
+    assert "session" in resp.cookies
+    resp2 = client.get("/api/v1/auth/me")
+    assert resp2.status_code == 200
+    assert resp2.json()["display_name"] == "Auth User"
+
+
+def test_activate_always_creates_user_role(client):
+    """Activation always creates role='user', never admin."""
+    resp = client.post("/api/v1/auth/activate", json={"name": "Normal User"})
+    assert resp.status_code == 201
+    assert resp.json()["role"] == "user"
+
+
+def test_admin_account_has_admin_role(client, db):
+    """The admin account has role='admin'."""
+    _seed_admin(db)
+    admin = db.query(User).filter(User.role == 'admin').first()
+    assert admin is not None
+    assert admin.role == "admin"
+    assert admin.is_active is True
+
+
+def test_admin_can_access_admin_endpoints(client, db):
+    """Admin account can access admin-only endpoints."""
+    admin = _seed_admin(db)
+    _set_session(client, admin.id)
+    resp = client.get("/api/v1/admin/users")
+    assert resp.status_code == 200

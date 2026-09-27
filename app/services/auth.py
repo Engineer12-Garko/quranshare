@@ -1,4 +1,6 @@
-"""Auth service — register, login helpers."""
+"""Auth service — register, login, activation helpers."""
+import secrets
+import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -15,7 +17,7 @@ def register_user(db: Session, payload: RegisterRequest) -> User:
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with that email already exists.",
         )
-        
+
     if payload.whatsapp_number:
         existing_wa = db.query(User).filter(User.whatsapp_number == payload.whatsapp_number).first()
         if existing_wa:
@@ -51,4 +53,23 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled.",
         )
+    return user
+
+
+def activate_user(db: Session, name: str) -> User:
+    """Create a new user by name only. Always creates role='user'."""
+    unique_id = uuid.uuid4().hex[:8]
+    email = f"{name.lower().replace(' ', '-')}-{unique_id}@quranflow.local"
+    password_hash = hash_password(secrets.token_urlsafe(32))
+
+    user = User(
+        email=email,
+        password_hash=password_hash,
+        display_name=name,
+        role="user",
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     return user

@@ -47,8 +47,7 @@ const API = {
 /* ── Router (hash-based SPA) ─────────────────────────────────────────────── */
 const ROUTES = {
   '/':          renderLanding,
-  '/login':     renderLogin,
-  '/register':  renderRegister,
+  '/activate':  renderActivate,
   '/dashboard': renderDashboard,
   '/library':   renderLibrary,
   '/history':   renderHistory,
@@ -227,8 +226,7 @@ async function renderLanding(app) {
           <h1>Quran<span>Flow</span></h1>
           <p>Discover, watch, and share short Islamic reminder videos — and track your daily posting habit.</p>
           <div class="landing-cta">
-            <a href="#/register" class="btn btn-primary">Get Started</a>
-            <a href="#/login"    class="btn btn-secondary">Sign In</a>
+            <a href="#/activate" class="btn btn-primary">Enter Your Name</a>
           </div>
         </div>
       </div>
@@ -260,110 +258,44 @@ async function renderLanding(app) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* LOGIN                                                                      */
 /* ══════════════════════════════════════════════════════════════════════════ */
-async function renderLogin(app) {
+async function renderActivate(app) {
   const user = await getUser();
   if (user) { navigate('/dashboard'); return; }
   app.innerHTML = `
     <div class="auth-page">
       <div class="auth-card">
         <div class="auth-logo">Quran<span>Flow</span></div>
-        <div class="auth-subtitle">Sign in to your account</div>
-        <form id="login-form">
+        <div class="auth-subtitle">Welcome to QuranFlow</div>
+        <p style="color:#999;font-size:14px;margin-bottom:16px;">Enter your name to activate your profile.</p>
+        <form id="activate-form">
           <div class="form-group">
-            <label for="email">Email</label>
-            <input id="email" type="email" required autocomplete="email" placeholder="you@example.com" />
+            <label for="name">Your Name</label>
+            <input id="name" type="text" required placeholder="Your name" maxlength="100" autocomplete="name" />
           </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input id="password" type="password" required autocomplete="current-password" placeholder="••••••••" />
-          </div>
-          <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+          <button type="submit" class="btn btn-primary btn-full">Continue</button>
         </form>
-        <p class="auth-switch">No account? <a href="#/register">Register</a></p>
       </div>
     </div>`;
 
-  app.querySelector('#login-form').addEventListener('submit', async e => {
+  app.querySelector('#activate-form').addEventListener('submit', async e => {
     e.preventDefault();
     const btn = e.target.querySelector('button[type=submit]');
-    btn.disabled = true; btn.textContent = 'Signing in…';
+    btn.disabled = true; btn.textContent = 'Activating…';
     clearAlert(app.querySelector('.auth-card'));
-    try {
-      await API.post('/auth/login', {
-        email:    app.querySelector('#email').value,
-        password: app.querySelector('#password').value,
-      });
-      clearUser();
-      navigate('/dashboard');
-    } catch (err) {
-      showAlert(app.querySelector('.auth-card'), err.message);
-      btn.disabled = false; btn.textContent = 'Sign In';
+    const name = app.querySelector('#name').value.trim();
+    if (!name) {
+      showAlert(app.querySelector('.auth-card'), 'Please enter your name.');
+      btn.disabled = false; btn.textContent = 'Continue';
+      return;
     }
-  });
-}
-
-/* ══════════════════════════════════════════════════════════════════════════ */
-/* REGISTER                                                                   */
-/* ══════════════════════════════════════════════════════════════════════════ */
-async function renderRegister(app) {
-  const user = await getUser();
-  if (user) { navigate('/dashboard'); return; }
-  app.innerHTML = `
-    <div class="auth-page">
-      <div class="auth-card">
-        <div class="auth-logo">Quran<span>Flow</span></div>
-        <div class="auth-subtitle">Create your account</div>
-        <form id="reg-form">
-          <div class="form-group">
-            <label for="name">Display Name</label>
-            <input id="name" type="text" required placeholder="Your name" maxlength="100" />
-          </div>
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input id="email" type="email" required autocomplete="email" placeholder="you@example.com" />
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input id="password" type="password" required autocomplete="new-password" placeholder="At least 8 chars, 1 uppercase, 1 digit" />
-            <div class="form-hint">Min 8 characters, must include an uppercase letter and a digit.</div>
-          </div>
-          <div class="form-group">
-            <label for="whatsapp">WhatsApp Number <span style="font-weight:400">(optional)</span></label>
-            <input id="whatsapp" type="tel" placeholder="+1234567890" />
-          </div>
-          <div class="form-group">
-            <label for="gender">Gender</label>
-            <select id="gender" required>
-              <option value="" disabled selected>Select gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary btn-full">Create Account</button>
-        </form>
-        <p class="auth-switch">Already have an account? <a href="#/login">Sign in</a></p>
-      </div>
-    </div>`;
-
-  app.querySelector('#reg-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    const btn = e.target.querySelector('button[type=submit]');
-    btn.disabled = true; btn.textContent = 'Creating account…';
-    clearAlert(app.querySelector('.auth-card'));
-    const wa = app.querySelector('#whatsapp').value.trim();
     try {
-      await API.post('/auth/register', {
-        display_name:     app.querySelector('#name').value.trim(),
-        email:            app.querySelector('#email').value.trim(),
-        password:         app.querySelector('#password').value,
-        gender:           app.querySelector('#gender').value,
-        ...(wa ? { whatsapp_number: wa } : {}),
-      });
+      await API.post('/auth/activate', { name });
       clearUser();
+      _currentUser = await getUser();
       navigate('/dashboard');
     } catch (err) {
       showAlert(app.querySelector('.auth-card'), err.message);
-      btn.disabled = false; btn.textContent = 'Create Account';
+      btn.disabled = false; btn.textContent = 'Continue';
     }
   });
 }
@@ -373,7 +305,7 @@ async function renderRegister(app) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 async function renderDashboard(app) {
   const user = await getUser();
-  if (!user) { navigate('/login'); return; }
+  if (!user) { navigate('/activate'); return; }
 
   app.innerHTML = shell('#/dashboard', user, `
     <div id="reminder-area" class="flex-1 w-full flex items-center justify-center p-4">
@@ -501,9 +433,12 @@ async function shareVideoFile(videoId, title, statusEl) {
 
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 
-  // ── Attempt 1: Web Share with actual File ──────────────────────────────────
-  if (navigator.canShare) {
-    setStatus('Downloading video for sharing…');
+  // ── Attempt 1: Web Share with actual File ──────────────────────────
+  // Try to use the Web Share API with a File object so the video
+  // goes directly to WhatsApp Status. We do NOT gate on canShare()
+  // because many browsers return false for video even though share() works.
+  if (navigator.canShare || navigator.share) {
+    setStatus('Preparing video…');
     try {
       const resp = await fetch(streamUrl, { credentials: 'same-origin' });
       if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
@@ -511,26 +446,32 @@ async function shareVideoFile(videoId, title, statusEl) {
       const safeTitle = (title || 'reminder').replace(/[^a-zA-Z0-9]/g, '_');
       const file  = new File([blob], `${safeTitle}.mp4`, { type: 'video/mp4' });
 
-      if (navigator.canShare({ files: [file] })) {
+      // Try sharing with files even if canShare() returned false
+      try {
         await navigator.share({
           files: [file],
+          title: title || 'Islamic Reminder 🕌',
+          text: 'Watch this Quran reminder! 🕌',
         });
         setStatus('Shared! Now mark it as posted.');
         return true;
+      } catch (shareErr) {
+        if (shareErr.name === 'AbortError') { setStatus('Share cancelled.'); return false; }
+        // canShare might be false — fall through to Attempt 2
       }
     } catch (e) {
-      // User cancelled or share failed — fall through
       if (e.name === 'AbortError') { setStatus('Share cancelled.'); return false; }
+      // Fetch failed — fall through to Attempt 2
     }
   }
 
-  // ── Attempt 2: Web Share URL only ─────────────────────────────────────────
+  // ── Attempt 2: Web Share URL only ─────────────────────────────────
   if (navigator.share) {
     try {
       await navigator.share({
         title: 'Islamic Reminder 🕌',
         text:  title || 'Daily Islamic Reminder',
-        url:   window.location.origin + streamUrl,
+        url:   absoluteUrl,
       });
       setStatus('Shared! Now mark it as posted.');
       return true;
@@ -540,9 +481,9 @@ async function shareVideoFile(videoId, title, statusEl) {
   }
 
   // ── Attempt 3: Download + wa.me ────────────────────────────────────
-  setStatus('Opening WhatsApp with the video…');
+  setStatus('Opening WhatsApp…');
+  // Trigger a browser download of the video
   try {
-    // Trigger a browser download with the full absolute URL
     const a = document.createElement('a');
     a.href = absoluteUrl;
     a.download = `${title || 'reminder'}.mp4`;
@@ -550,7 +491,7 @@ async function shareVideoFile(videoId, title, statusEl) {
     a.click();
     document.body.removeChild(a);
   } catch {}
-  // Open WhatsApp with the video URL in the message so it opens directly
+  // Open WhatsApp with the video URL so it plays directly when tapped
   const caption = encodeURIComponent(`${title || 'Islamic Reminder'} 🕌\n\n${absoluteUrl}`);
   setTimeout(() => window.open(`https://wa.me/?text=${caption}`, '_blank'), 800);
   return true;
@@ -605,7 +546,7 @@ function bindShareAndPost(app, videoId, videoTitle) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 async function renderLibrary(app) {
   const user = await getUser();
-  if (!user) { navigate('/login'); return; }
+  if (!user) { navigate('/activate'); return; }
 
   app.innerHTML = shell('#/library', user, `
     <!-- Top Search Bar -->
@@ -795,7 +736,7 @@ function renderPagination(container, total, skip, limit, cb) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 async function renderProgress(app) {
   const user = await getUser();
-  if (!user) { navigate('/login'); return; }
+  if (!user) { navigate('/activate'); return; }
 
   app.innerHTML = shell('#/progress', user, `
     <div class="px-space-md mt-6">
@@ -884,7 +825,7 @@ function renderProgressWidget(p) {
 /* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
 async function renderHistory(app) {
   const user = await getUser();
-  if (!user) { navigate('/login'); return; }
+  if (!user) { navigate('/activate'); return; }
 
   app.innerHTML = shell('#/history', user, `
     <div class="page-title">≡ƒôï Posting History</div>
@@ -928,7 +869,7 @@ async function renderHistory(app) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 async function renderProfile(app) {
   const user = await getUser();
-  if (!user) { navigate('/login'); return; }
+  if (!user) { navigate('/activate'); return; }
   const initial = user.display_name?.[0]?.toUpperCase() || '?';
 
   app.innerHTML = shell('#/profile', user, `
@@ -995,7 +936,7 @@ async function renderProfile(app) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 async function renderAdmin(app) {
   const user = await getUser();
-  if (!user) { navigate('/login'); return; }
+  if (!user) { navigate('/activate'); return; }
   if (user.role !== 'admin' && user.role !== 'curator') { navigate('/dashboard'); return; }
 
   app.innerHTML = shell('#/admin', user, `
