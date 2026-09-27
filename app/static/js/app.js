@@ -488,14 +488,16 @@ async function renderDashboard(app) {
  *  1. Web Share API with File object  — lets Android/iOS pass the real MP4
  *     to WhatsApp, Telegram, etc. for Status upload.
  *  2. Web Share API with URL only     — fallback for browsers that support
- *     navigator.share but not files (e.g. desktop Chrome).
- *  3. Download the file + open wa.me  — final fallback: saves the video to
- *     the device so the user can attach it manually in WhatsApp.
+ *     navigator.share but not files (e.g. desktop Chrome). Shares the video URL directly.
+ *  3. Download + wa.me with video URL — final fallback: triggers a download and
+ *     opens WhatsApp with the full video URL in the message so the video
+ *     opens directly when tapped (no manual attachment needed).
  *
  * Returns true if the share sheet opened, false on hard failure.
  */
 async function shareVideoFile(videoId, title, statusEl) {
   const streamUrl = `/api/v1/videos/${videoId}/stream`;
+  const absoluteUrl = window.location.origin + streamUrl;
 
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 
@@ -537,19 +539,19 @@ async function shareVideoFile(videoId, title, statusEl) {
     }
   }
 
-  // ── Attempt 3: Download + wa.me ────────────────────────────────────────────
-  setStatus('Downloading video… open WhatsApp and attach it as a Status.');
+  // ── Attempt 3: Download + wa.me ────────────────────────────────────
+  setStatus('Opening WhatsApp with the video…');
   try {
-    // Trigger a browser download
+    // Trigger a browser download with the full absolute URL
     const a = document.createElement('a');
-    a.href = streamUrl;
+    a.href = absoluteUrl;
     a.download = `${title || 'reminder'}.mp4`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   } catch {}
-  // Open WhatsApp Status deep-link (text message with reminder caption)
-  const caption = encodeURIComponent(`${title || 'Islamic Reminder'} 🕌`);
+  // Open WhatsApp with the video URL in the message so it opens directly
+  const caption = encodeURIComponent(`${title || 'Islamic Reminder'} 🕌\n\n${absoluteUrl}`);
   setTimeout(() => window.open(`https://wa.me/?text=${caption}`, '_blank'), 800);
   return true;
 }
