@@ -202,6 +202,219 @@ function shell(active, user, innerHtml) {
   `;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* LANDING                                                                    */
+/* ══════════════════════════════════════════════════════════════════════════ */
+async function renderLanding(app) {
+  const user = await getUser();
+  if (user) { navigate('/dashboard'); return; }
+  app.innerHTML = `
+    <div class="landing">
+      <div class="landing-hero">
+        <div>
+          <h1>Quran<span>Flow</span></h1>
+          <p>Discover, watch, and share short Islamic reminder videos — and track your daily posting habit.</p>
+          <div class="landing-cta">
+            <a href="#/register" class="btn btn-primary">Get Started</a>
+            <a href="#/login"    class="btn btn-secondary">Sign In</a>
+          </div>
+        </div>
+      </div>
+      <div class="landing-features">
+        <div class="feature-card card">
+          <div class="feature-icon">🎬</div>
+          <h3>Curated Library</h3>
+          <p>Short Quranic reminders organized by topic — Quran, Dua, Salah, and more.</p>
+        </div>
+        <div class="feature-card card">
+          <div class="feature-icon">📱</div>
+          <h3>WhatsApp Sharing</h3>
+          <p>One tap to share your daily reminder as a WhatsApp Status.</p>
+        </div>
+        <div class="feature-card card">
+          <div class="feature-icon">📊</div>
+          <h3>Weekly Progress</h3>
+          <p>Track how consistently you share reminders every week.</p>
+        </div>
+        <div class="feature-card card">
+          <div class="feature-icon">⭐</div>
+          <h3>Daily Reminder</h3>
+          <p>A fresh reminder each day — avoiding ones you've recently posted.</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* LOGIN                                                                      */
+/* ══════════════════════════════════════════════════════════════════════════ */
+async function renderLogin(app) {
+  const user = await getUser();
+  if (user) { navigate('/dashboard'); return; }
+  app.innerHTML = `
+    <div class="auth-page">
+      <div class="auth-card">
+        <div class="auth-logo">Quran<span>Flow</span></div>
+        <div class="auth-subtitle">Sign in to your account</div>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input id="email" type="email" required autocomplete="email" placeholder="you@example.com" />
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input id="password" type="password" required autocomplete="current-password" placeholder="••••••••" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+        </form>
+        <p class="auth-switch">No account? <a href="#/register">Register</a></p>
+      </div>
+    </div>`;
+
+  app.querySelector('#login-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    clearAlert(app.querySelector('.auth-card'));
+    try {
+      await API.post('/auth/login', {
+        email:    app.querySelector('#email').value,
+        password: app.querySelector('#password').value,
+      });
+      clearUser();
+      navigate('/dashboard');
+    } catch (err) {
+      showAlert(app.querySelector('.auth-card'), err.message);
+      btn.disabled = false; btn.textContent = 'Sign In';
+    }
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* REGISTER                                                                   */
+/* ══════════════════════════════════════════════════════════════════════════ */
+async function renderRegister(app) {
+  const user = await getUser();
+  if (user) { navigate('/dashboard'); return; }
+  app.innerHTML = `
+    <div class="auth-page">
+      <div class="auth-card">
+        <div class="auth-logo">Quran<span>Flow</span></div>
+        <div class="auth-subtitle">Create your account</div>
+        <form id="reg-form">
+          <div class="form-group">
+            <label for="name">Display Name</label>
+            <input id="name" type="text" required placeholder="Your name" maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input id="email" type="email" required autocomplete="email" placeholder="you@example.com" />
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input id="password" type="password" required autocomplete="new-password" placeholder="At least 8 chars, 1 uppercase, 1 digit" />
+            <div class="form-hint">Min 8 characters, must include an uppercase letter and a digit.</div>
+          </div>
+          <div class="form-group">
+            <label for="whatsapp">WhatsApp Number <span style="font-weight:400">(optional)</span></label>
+            <input id="whatsapp" type="tel" placeholder="+1234567890" />
+          </div>
+          <div class="form-group">
+            <label for="gender">Gender</label>
+            <select id="gender" required>
+              <option value="" disabled selected>Select gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+        </form>
+        <p class="auth-switch">Already have an account? <a href="#/login">Sign in</a></p>
+      </div>
+    </div>`;
+
+  app.querySelector('#reg-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    clearAlert(app.querySelector('.auth-card'));
+    const wa = app.querySelector('#whatsapp').value.trim();
+    try {
+      await API.post('/auth/register', {
+        display_name:     app.querySelector('#name').value.trim(),
+        email:            app.querySelector('#email').value.trim(),
+        password:         app.querySelector('#password').value,
+        gender:           app.querySelector('#gender').value,
+        ...(wa ? { whatsapp_number: wa } : {}),
+      });
+      clearUser();
+      navigate('/dashboard');
+    } catch (err) {
+      showAlert(app.querySelector('.auth-card'), err.message);
+      btn.disabled = false; btn.textContent = 'Create Account';
+    }
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* DASHBOARD                                                                  */
+/* ══════════════════════════════════════════════════════════════════════════ */
+async function renderDashboard(app) {
+  const user = await getUser();
+  if (!user) { navigate('/login'); return; }
+
+  app.innerHTML = shell('#/dashboard', user, `
+    <div id="reminder-area" class="flex-1 w-full flex items-center justify-center p-0 sm:p-4">
+      <div class="loading-overlay"><div class="spinner"></div></div>
+    </div>
+  `);
+  bindLogout(app);
+
+  const reminderResult = await API.get('/reminders/today').catch(e => e);
+
+  const ra = app.querySelector('#reminder-area');
+  if (reminderResult.id) {
+    const v = reminderResult;
+    ra.innerHTML = `
+      <div class="relative w-full max-w-[480px] bg-black sm:rounded-[32px] overflow-hidden shadow-2xl flex flex-col justify-end mx-auto h-full max-h-full sm:h-auto sm:my-4 sm:aspect-[9/16] sm:max-h-[85vh]">
+        <video id="dash-video" class="absolute inset-0 w-full h-full object-cover" controls preload="metadata" src="/api/v1/videos/${v.id}/stream"></video>
+        
+        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-32 pb-6 px-space-md flex flex-col justify-end pointer-events-none">
+          <div class="pointer-events-auto">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">✨ Fresh Today</span>
+              ${v.category_name ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">${escHtml(v.category_name)}</span>` : ''}
+              ${v.duration_seconds ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">⏱ ${fmtDuration(v.duration_seconds)}</span>` : ''}
+            </div>
+            
+            <h2 class="text-surface font-display-lg-mobile mb-4 text-shadow-sm leading-tight">${escHtml(v.title)}</h2>
+            
+            <div class="flex items-center gap-space-sm">
+              <button id="share-btn" data-id="${v.id}" class="flex-1 h-14 bg-primary text-on-primary rounded-full font-label-lg flex items-center justify-center gap-2 shadow-[0_8px_16px_rgba(0,36,26,0.2)] hover:bg-primary/90 transition-colors">
+                <span class="material-symbols-outlined text-[20px]">send</span> Share
+              </button>
+              <button id="posted-btn" data-id="${v.id}" disabled class="flex-1 h-14 bg-surface/20 backdrop-blur-md text-surface rounded-full font-label-lg flex items-center justify-center gap-2 border border-surface/30 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface/30 transition-colors">
+                <span class="material-symbols-outlined text-[20px]">check_circle</span> Posted
+              </button>
+            </div>
+            
+            <p id="posted-hint" class="text-surface/80 text-center font-label-sm mt-3">Share to WhatsApp to mark as posted</p>
+          </div>
+        </div>
+      </div>
+    `;
+    bindShareAndPost(app, v.id, v.title);
+  } else {
+    const status = reminderResult.status;
+    if (status === 404) {
+      ra.innerHTML = `<div class="p-4 text-center mt-20"><div class="text-4xl mb-4">📭</div><p>No videos in the library yet. Check back soon!</p></div>`;
+    } else {
+      ra.innerHTML = `<div class="p-4 text-center mt-20"><p class="text-error">Could not load today's reminder: ${escHtml(reminderResult.message || 'Unknown error')}</p></div>`;
+    }
+  }
+}
+
+
 /* ── Core share helper (used by dashboard, library modal, library cards) ─── */
 /**
  * shareVideoFile(videoId, title)
