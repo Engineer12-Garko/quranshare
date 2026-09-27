@@ -412,9 +412,7 @@ async function shareVideoFile(videoId, title, statusEl) {
 
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({
-          title:  'Islamic Reminder 🕌',
-          text:   title || 'Daily Islamic Reminder',
-          files:  [file],
+          files: [file],
         });
         setStatus('Shared! Now mark it as posted.');
         return true;
