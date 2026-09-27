@@ -408,7 +408,8 @@ async function shareVideoFile(videoId, title, statusEl) {
       const resp = await fetch(streamUrl, { credentials: 'same-origin' });
       if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
       const blob  = await resp.blob();
-      const file  = new File([blob], `${title || 'reminder'}.mp4`, { type: 'video/mp4' });
+      const safeTitle = (title || 'reminder').replace(/[^a-zA-Z0-9]/g, '_');
+      const file  = new File([blob], `${safeTitle}.mp4`, { type: 'video/mp4' });
 
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({
