@@ -10,6 +10,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
     display_name: str = Field(..., min_length=1, max_length=100)
     whatsapp_number: str | None = Field(default=None, max_length=20)
+    gender: Literal["Male", "Female"] | None = None
 
     @field_validator("password")
     @classmethod
@@ -29,6 +30,7 @@ class LoginRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     whatsapp_number: str | None = Field(default=None, max_length=20)
+    gender: Literal["Male", "Female"] | None = None
 
 
 class AdminUpdateUserRequest(BaseModel):
@@ -41,6 +43,7 @@ class UserResponse(BaseModel):
     email: str
     display_name: str
     whatsapp_number: str | None
+    gender: str | None
     role: Literal["user", "curator", "admin"]
     is_active: bool
     created_at: datetime

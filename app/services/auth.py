@@ -28,6 +28,7 @@ def register_user(db: Session, payload: RegisterRequest) -> User:
         password_hash=hash_password(payload.password),
         display_name=payload.display_name,
         whatsapp_number=payload.whatsapp_number,
+        gender=payload.gender,
         role="user",
         is_active=True,
     )

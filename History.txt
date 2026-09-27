@@ -1,0 +1,16 @@
+# QuranFlow Development History
+
+## Session 1
+- Upgraded the Web Share functionality in `app.js` to share videos natively to WhatsApp Status instead of downloading. Enabled filename sanitisation to bypass Android share limits.
+- Redesigned the entire web app UI using a premium design reference (dark green #0C4228, gold accents, soft cream background).
+- Implemented "✨ Fresh Today" pill and a large edge-to-edge video card for the daily dashboard.
+- Redesigned the weekly progress bar to show gold fills and checkmarks for posted statuses.
+- Patched database roles: promoted users to `admin` for testing purposes and fixed `psycopg2` dependencies.
+- Added `History.txt` to track our progress moving forward.
+- Replaced randomized daily video recommendation with a strict FIFO queue logic (showing the oldest unseen synced video first).
+- Defined custom CSS properties in `main.css` to standardize the UI theme, mapping the core colors (`--bg`, `--accent`, `--gold`) and establishing the design system variables for tracking.
+
+## Next steps
+- Add admin capability to edit and delete users/videos.
+- Address the "Forgot Password" feature if needed.
+- Consider migrating the project into a native APK/Capacitor shell to bypass Vercel serverless file size streaming limitations completely.

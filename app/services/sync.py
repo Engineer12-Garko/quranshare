@@ -56,7 +56,18 @@ def sync_drive(db: Session) -> dict:
     for folder in subfolders:
         folder_name = folder["name"]
         folder_id = folder["id"]
-        category_id = category_map.get(folder_name.lower())
+        
+        folder_name_lower = folder_name.lower()
+        if folder_name_lower in category_map:
+            category_id = category_map[folder_name_lower]
+        else:
+            # Auto-create the category if it doesn't exist
+            new_cat = Category(name=folder_name, description=f"Imported from {folder_name}", is_active=True)
+            db.add(new_cat)
+            db.commit()
+            db.refresh(new_cat)
+            category_map[folder_name_lower] = new_cat.id
+            category_id = new_cat.id
 
         try:
             files = drive.list_mp4s_in_folder(folder_id)

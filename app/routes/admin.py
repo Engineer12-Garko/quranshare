@@ -6,6 +6,9 @@ from app.database import get_db
 from app.dependencies.auth import require_role
 from app.models.user import User
 from app.schemas.user import UserResponse, AdminUpdateUserRequest
+import csv
+import io
+from fastapi.responses import StreamingResponse
 from app.services.sync import sync_drive
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -36,6 +39,38 @@ def list_users(
 ):
     """Return all registered users. Admin only."""
     return db.query(User).order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+
+
+@router.get("/users/csv")
+def download_users_csv(
+    db: Session = Depends(get_db),
+    _: User = Depends(_admin_only),
+):
+    """Download all users as a CSV file."""
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Name", "Email", "WhatsApp", "Gender", "Role", "Active", "Joined"])
+    
+    for u in users:
+        writer.writerow([
+            u.id,
+            u.display_name,
+            u.email,
+            u.whatsapp_number or "",
+            u.gender or "",
+            u.role,
+            "Yes" if u.is_active else "No",
+            u.created_at.isoformat()
+        ])
+    
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users.csv"}
+    )
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)

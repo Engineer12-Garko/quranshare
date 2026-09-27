@@ -270,6 +270,14 @@ async function renderRegister(app) {
             <label for="whatsapp">WhatsApp Number <span style="font-weight:400">(optional)</span></label>
             <input id="whatsapp" type="tel" placeholder="+1234567890" />
           </div>
+          <div class="form-group">
+            <label for="gender">Gender</label>
+            <select id="gender" required>
+              <option value="" disabled selected>Select gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
           <button type="submit" class="btn btn-primary btn-full">Create Account</button>
         </form>
         <p class="auth-switch">Already have an account? <a href="#/login">Sign in</a></p>
@@ -287,6 +295,7 @@ async function renderRegister(app) {
         display_name:     app.querySelector('#name').value.trim(),
         email:            app.querySelector('#email').value.trim(),
         password:         app.querySelector('#password').value,
+        gender:           app.querySelector('#gender').value,
         ...(wa ? { whatsapp_number: wa } : {}),
       });
       clearUser();
@@ -503,62 +512,88 @@ function bindShareAndPost(app, videoId, videoTitle) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* LIBRARY                                                                    */
 /* ══════════════════════════════════════════════════════════════════════════ */
-async function renderLibrary(app) {
+async function renderLibrary(app, categoryId = null, categoryName = null) {
   const user = await getUser();
   if (!user) { navigate('/login'); return; }
 
-  app.innerHTML = shell('#/library', user, `
-    <div class="page-title">📚 Video Library</div>
-    <div class="search-bar">
-      <input id="search-input" type="search" placeholder="Search videos…" />
-      <select id="cat-filter"><option value="">All Categories</option></select>
-    </div>
-    <div id="videos-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
-    <div id="pagination-area"></div>
-  `);
-  bindLogout(app);
+  if (!categoryId) {
+    // Show Categories
+    app.innerHTML = shell('#/library', user, `
+      <div class="page-title">📚 Video Library</div>
+      <p class="text-muted mb-16">Select a category to view videos.</p>
+      <div id="categories-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
+    `);
+    bindLogout(app);
 
-  const catSelect = app.querySelector('#cat-filter');
-  let skip = 0, limit = 12, query = '', categoryId = '';
-
-  // Load categories
-  try {
-    const cats = await API.get('/categories');
-    cats.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.id; opt.textContent = c.name;
-      catSelect.appendChild(opt);
-    });
-  } catch {}
-
-  async function loadVideos() {
-    const area = app.querySelector('#videos-area');
-    area.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
     try {
-      const params = new URLSearchParams({ skip, limit });
-      if (query)      params.set('search', query);
-      if (categoryId) params.set('category_id', categoryId);
-      const data = await API.get(`/videos?${params}`);
-      if (data.items.length === 0) {
-        area.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>No videos found.</p></div>`;
+      const cats = await API.get('/categories');
+      if (cats.length === 0) {
+        app.querySelector('#categories-area').innerHTML = `<div class="empty-state"><div class="empty-icon">📁</div><p>No categories found.</p></div>`;
       } else {
-        area.innerHTML = `<div class="video-grid">${data.items.map(videoCard).join('')}</div>`;
-        bindVideoCards(app);
+        const catHtml = cats.map(c => `
+          <div class="card cat-card" style="cursor:pointer;" data-id="${c.id}" data-name="${escHtml(c.name)}">
+            <h3 style="margin-top:0; color:var(--primary); font-size:1.2rem;">📁 ${escHtml(c.name)}</h3>
+            <p class="text-muted" style="margin-bottom:0; font-size:0.9rem;">${escHtml(c.description || 'View videos in this category')}</p>
+          </div>
+        `).join('');
+        app.querySelector('#categories-area').innerHTML = `<div class="video-grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));">${catHtml}</div>`;
+        
+        app.querySelectorAll('.cat-card').forEach(card => {
+          card.addEventListener('click', () => {
+            renderLibrary(app, card.dataset.id, card.dataset.name);
+          });
+        });
       }
-      renderPagination(app.querySelector('#pagination-area'), data.total, skip, limit, (s) => { skip = s; loadVideos(); });
     } catch (err) {
-      area.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+      app.querySelector('#categories-area').innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
     }
+  } else {
+    // Show Videos for the selected category
+    app.innerHTML = shell('#/library', user, `
+      <div class="page-title" style="display:flex; align-items:center; gap:12px;">
+        <button class="btn btn-secondary btn-sm" id="back-to-cats">&larr; Back</button>
+        <span>📁 ${escHtml(categoryName)}</span>
+      </div>
+      <div class="search-bar">
+        <input id="search-input" type="search" placeholder="Search videos in ${escHtml(categoryName)}…" />
+      </div>
+      <div id="videos-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
+      <div id="pagination-area"></div>
+    `);
+    bindLogout(app);
+
+    app.querySelector('#back-to-cats').addEventListener('click', () => {
+      renderLibrary(app, null, null);
+    });
+
+    let skip = 0, limit = 12, query = '';
+    async function loadVideos() {
+      const area = app.querySelector('#videos-area');
+      area.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
+      try {
+        const params = new URLSearchParams({ skip, limit, category_id: categoryId });
+        if (query) params.set('search', query);
+        const data = await API.get(`/videos?${params}`);
+        if (data.items.length === 0) {
+          area.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>No videos found.</p></div>`;
+        } else {
+          area.innerHTML = `<div class="video-grid">${data.items.map(videoCard).join('')}</div>`;
+          bindVideoCards(app);
+        }
+        renderPagination(app.querySelector('#pagination-area'), data.total, skip, limit, (s) => { skip = s; loadVideos(); });
+      } catch (err) {
+        area.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+      }
+    }
+
+    let searchTimer;
+    app.querySelector('#search-input').addEventListener('input', e => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { query = e.target.value.trim(); skip = 0; loadVideos(); }, 350);
+    });
+
+    loadVideos();
   }
-
-  let searchTimer;
-  app.querySelector('#search-input').addEventListener('input', e => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => { query = e.target.value.trim(); skip = 0; loadVideos(); }, 350);
-  });
-  catSelect.addEventListener('change', e => { categoryId = e.target.value; skip = 0; loadVideos(); });
-
-  loadVideos();
 }
 
 function videoCard(v) {
@@ -862,10 +897,20 @@ async function renderAdmin(app) {
     ${user.role === 'admin' ? `
     <div class="card">
       <div class="section-title">Users</div>
+      <div style="margin-bottom: 16px;">
+        <button class="btn btn-secondary btn-sm" id="dl-csv-btn">📥 Download CSV</button>
+      </div>
       <div id="users-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
     </div>` : ''}
   `);
   bindLogout(app);
+
+  const dlBtn = app.querySelector('#dl-csv-btn');
+  if (dlBtn) {
+    dlBtn.addEventListener('click', () => {
+      window.open('/api/v1/admin/users/csv', '_blank');
+    });
+  }
 
   app.querySelector('#sync-btn').addEventListener('click', async () => {
     const btn = app.querySelector('#sync-btn');
@@ -896,6 +941,7 @@ async function renderAdmin(app) {
           <tr>
             <td>${escHtml(u.display_name)}</td>
             <td>${escHtml(u.email)}</td>
+            <td>${escHtml(u.gender || '-')}</td>
             <td><span class="role-badge role-${u.role}">${u.role}</span></td>
             <td>${u.is_active ? '✅' : '❌'}</td>
             <td class="text-muted">${fmtDate(u.created_at)}</td>
@@ -906,7 +952,7 @@ async function renderAdmin(app) {
           </tr>`).join('');
         app.querySelector('#users-area').innerHTML = `
           <table class="users-table">
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Joined</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Role</th><th>Active</th><th>Joined</th><th>Actions</th></tr></thead>
             <tbody>${tbody}</tbody>
           </table>`;
 
