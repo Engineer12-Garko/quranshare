@@ -587,89 +587,69 @@ function bindShareAndPost(app, videoId, videoTitle) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* LIBRARY                                                                    */
 /* ══════════════════════════════════════════════════════════════════════════ */
-async function renderLibrary(app, categoryId = null, categoryName = null) {
+async function renderLibrary(app) {
   const user = await getUser();
   if (!user) { navigate('/login'); return; }
 
-  if (!categoryId) {
-    // Show Categories
-    app.innerHTML = shell('#/library', user, `
-      <div class="page-title">📚 Video Library</div>
-      <p class="text-muted mb-16">Select a category to view videos.</p>
-      <div id="categories-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
-    `);
-    bindLogout(app);
+  app.innerHTML = shell('#/library', user, `
+    <!-- Top Search Bar -->
+    <div class="px-space-md py-4 bg-surface sticky top-16 z-40 border-b border-surface-container shadow-sm sm:top-0">
+      <div class="relative max-w-3xl mx-auto">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+        <input type="text" id="search-input" placeholder="Search by topic, surah, or emotion..." class="w-full h-12 pl-10 pr-4 bg-surface-container-low border border-outline-variant rounded-full font-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all shadow-sm">
+      </div>
+    </div>
 
+    <!-- Content Area -->
+    <div class="flex-1 overflow-y-auto px-space-md py-6">
+      <!-- Videos Section -->
+      <div class="max-w-6xl mx-auto">
+        <h2 class="font-headline-sm text-primary mb-4 flex items-center justify-between" id="video-section-title">
+          <span class="flex items-center gap-2"><span class="material-symbols-outlined text-[20px]">video_library</span> All Reminders</span>
+        </h2>
+        <div id="lib-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
+        <div id="lib-pagination" class="mt-8 flex justify-center pb-8"></div>
+      </div>
+    </div>
+  `);
+  bindLogout(app);
+
+  let query = '';
+  let skip = 0;
+  const limit = 12;
+  let searchTimer;
+
+  async function loadVideos() {
+    const la = app.querySelector('#lib-area');
+    la.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
     try {
-      const cats = await API.get('/categories');
-      if (cats.length === 0) {
-        app.querySelector('#categories-area').innerHTML = `<div class="empty-state"><div class="empty-icon">📁</div><p>No categories found.</p></div>`;
-      } else {
-        const catHtml = cats.map(c => `
-          <div class="card cat-card" style="cursor:pointer;" data-id="${c.id}" data-name="${escHtml(c.name)}">
-            <h3 style="margin-top:0; color:var(--primary); font-size:1.2rem;">📁 ${escHtml(c.name)}</h3>
-            <p class="text-muted" style="margin-bottom:0; font-size:0.9rem;">${escHtml(c.description || 'View videos in this category')}</p>
-          </div>
-        `).join('');
-        app.querySelector('#categories-area').innerHTML = `<div class="video-grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));">${catHtml}</div>`;
-        
-        app.querySelectorAll('.cat-card').forEach(card => {
-          card.addEventListener('click', () => {
-            renderLibrary(app, card.dataset.id, card.dataset.name);
-          });
-        });
+      const qs = new URLSearchParams({ skip, limit });
+      if (query) qs.set('search', query);
+      
+      const res = await API.get('/videos?' + qs.toString());
+      if (res.items.length === 0) {
+        la.innerHTML = `<div class="p-8 text-center bg-surface-container rounded-2xl border border-surface-container-highest max-w-md mx-auto mt-8"><span class="material-symbols-outlined text-[48px] text-outline mb-2">search_off</span><p class="font-body-md text-on-surface-variant">No videos found.</p></div>`;
+        app.querySelector('#lib-pagination').innerHTML = '';
+        return;
       }
+      la.innerHTML = `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-space-md" id="lib-grid"></div>`;
+      const grid = la.querySelector('#lib-grid');
+      res.items.forEach(v => grid.insertAdjacentHTML('beforeend', videoCard(v)));
+      bindVideoCards(grid);
+      renderPagination(app.querySelector('#lib-pagination'), res.total, skip, limit, s => { skip = s; loadVideos(); });
     } catch (err) {
-      app.querySelector('#categories-area').innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+      la.innerHTML = `<div class="p-4 bg-error-container text-on-error-container rounded-xl">${escHtml(err.message)}</div>`;
     }
-  } else {
-    // Show Videos for the selected category
-    app.innerHTML = shell('#/library', user, `
-      <div class="page-title" style="display:flex; align-items:center; gap:12px;">
-        <button class="btn btn-secondary btn-sm" id="back-to-cats">&larr; Back</button>
-        <span>📁 ${escHtml(categoryName)}</span>
-      </div>
-      <div class="search-bar">
-        <input id="search-input" type="search" placeholder="Search videos in ${escHtml(categoryName)}…" />
-      </div>
-      <div id="videos-area"><div class="loading-overlay"><div class="spinner"></div></div></div>
-      <div id="pagination-area"></div>
-    `);
-    bindLogout(app);
-
-    app.querySelector('#back-to-cats').addEventListener('click', () => {
-      renderLibrary(app, null, null);
-    });
-
-    let skip = 0, limit = 12, query = '';
-    async function loadVideos() {
-      const area = app.querySelector('#videos-area');
-      area.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
-      try {
-        const params = new URLSearchParams({ skip, limit, category_id: categoryId });
-        if (query) params.set('search', query);
-        const data = await API.get(`/videos?${params}`);
-        if (data.items.length === 0) {
-          area.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><p>No videos found.</p></div>`;
-        } else {
-          area.innerHTML = `<div class="video-grid">${data.items.map(videoCard).join('')}</div>`;
-          bindVideoCards(app);
-        }
-        renderPagination(app.querySelector('#pagination-area'), data.total, skip, limit, (s) => { skip = s; loadVideos(); });
-      } catch (err) {
-        area.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
-      }
-    }
-
-    let searchTimer;
-    app.querySelector('#search-input').addEventListener('input', e => {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { query = e.target.value.trim(); skip = 0; loadVideos(); }, 350);
-    });
-
-    loadVideos();
   }
+
+  app.querySelector('#search-input').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { query = e.target.value.trim(); skip = 0; loadVideos(); }, 350);
+  });
+
+  loadVideos();
 }
+
 
 function videoCard(v) {
   return `
