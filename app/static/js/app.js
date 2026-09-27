@@ -388,15 +388,17 @@ async function renderDashboard(app) {
             preload="metadata"
           ></video>
           
-          <!-- Floating Video Metadata overlay -->
+          <!-- Top Badges Overlay -->
+          <div class="absolute top-0 inset-x-0 p-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none flex flex-wrap items-start gap-1.5">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-[10px] font-bold shadow-sm">
+              <span class="material-symbols-outlined text-[12px]">auto_awesome</span> Fresh Today
+            </span>
+            ${v.category_name ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-sm text-[10px]">${escHtml(v.category_name)}</span>` : ''}
+            ${v.duration_seconds ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-sm text-[10px]">⏱ ${fmtDuration(v.duration_seconds)}</span>` : ''}
+          </div>
+          
+          <!-- Bottom Metadata overlay -->
           <div class="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none">
-            <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-[10px] font-bold shadow-sm">
-                <span class="material-symbols-outlined text-[12px]">auto_awesome</span> Fresh Today
-              </span>
-              ${v.category_name ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-sm text-[10px]">${escHtml(v.category_name)}</span>` : ''}
-              ${v.duration_seconds ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-sm text-[10px]">⏱ ${fmtDuration(v.duration_seconds)}</span>` : ''}
-            </div>
             <h2 class="font-headline-sm text-white drop-shadow-md leading-tight">${escHtml(v.title)}</h2>
             ${v.description ? `<p class="mt-1 text-white/90 font-body-sm text-[11px] line-clamp-2 drop-shadow-sm">${escHtml(v.description)}</p>` : ''}
           </div>
