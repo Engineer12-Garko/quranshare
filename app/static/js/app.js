@@ -1,6 +1,18 @@
 /* ── API client ──────────────────────────────────────────────────────────── */
+let _apiCache = {};
 const API = {
-  async request(method, path, body = null) {
+  async request(method, path, body = null, cacheSeconds = 0) {
+    const cacheKey = method + path;
+    
+    // Clear cache on any mutation (POST, PATCH, DELETE)
+    if (method !== 'GET') {
+      _apiCache = {};
+    }
+    
+    if (method === 'GET' && cacheSeconds > 0 && _apiCache[cacheKey] && (Date.now() - _apiCache[cacheKey].ts < cacheSeconds * 1000)) {
+      return _apiCache[cacheKey].data;
+    }
+
     const opts = {
       method,
       credentials: 'same-origin',
@@ -26,7 +38,7 @@ const API = {
     }
     return data;
   },
-  get:    (p)    => API.request('GET',    p),
+  get:    (p, cache = 0) => API.request('GET',    p, null, cache),
   post:   (p, b) => API.request('POST',   p, b),
   patch:  (p, b) => API.request('PATCH',  p, b),
   delete: (p)    => API.request('DELETE', p),
@@ -63,7 +75,7 @@ async function route() {
   const hash = window.location.hash.slice(1) || '/';
   const handler = ROUTES[hash] || renderLanding;
   const app = document.getElementById('app');
-  app.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
+  // Don't show global spinner to avoid flashing, let views handle it
   try { await handler(app); }
   catch (e) {
     console.error(e);
@@ -371,7 +383,7 @@ async function renderDashboard(app) {
   bindLogout(app);
 
   try {
-    const res = await API.get('/reminders/today');
+    const res = await API.get('/reminders/today', 60);
     const v = res;
     
     // Medium sized card with buttons BELOW
@@ -575,7 +587,7 @@ function bindShareAndPost(app, videoId, videoTitle) {
       if (hint) { hint.textContent = 'Great job! Your history and progress have been updated.'; hint.style.color = 'var(--success)'; }
       // Refresh progress widget
       try {
-        const p = await API.get('/progress/weekly');
+        const p = await API.get('/progress/weekly', 60);
         const pa = app.querySelector('#progress-area');
         if (pa) pa.innerHTML = renderProgressWidget(p);
       } catch {}
@@ -628,7 +640,7 @@ async function renderLibrary(app) {
       const qs = new URLSearchParams({ skip, limit });
       if (query) qs.set('search', query);
       
-      const res = await API.get('/videos?' + qs.toString());
+      const res = await API.get('/videos?' + qs.toString(), 60);
       if (res.items.length === 0) {
         la.innerHTML = `<div class="p-8 text-center bg-surface-container rounded-2xl border border-surface-container-highest max-w-md mx-auto mt-8"><span class="material-symbols-outlined text-[48px] text-outline mb-2">search_off</span><p class="font-body-md text-on-surface-variant">No videos found.</p></div>`;
         app.querySelector('#lib-pagination').innerHTML = '';
@@ -794,7 +806,7 @@ async function renderProgress(app) {
   bindLogout(app);
 
   try {
-    const p = await API.get('/progress/weekly');
+    const p = await API.get('/progress/weekly', 60);
     app.querySelector('#prog-area').innerHTML = renderProgressWidget(p) + `
       <div class="mt-8">
         <h3 class="font-headline-md text-on-surface mb-4">Recent History</h3>
