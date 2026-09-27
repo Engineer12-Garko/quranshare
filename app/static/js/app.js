@@ -469,7 +469,8 @@ function bindShareAndPost(app, videoId, videoTitle) {
 
     if (shared) {
       postedBtn.disabled = false;
-      shareBtn.textContent = '✅ Shared!';
+      shareBtn.innerHTML = '<span>✅</span> Shared (Share Again)';
+      shareBtn.disabled = false;
       if (hint && hint.textContent === hint.textContent) // only if not already set by shareVideoFile
         hint.textContent = 'Now tap "Mark as Posted" to record it in your history.';
     } else {
@@ -636,7 +637,8 @@ async function openVideoModal(videoId) {
     const shared = await shareVideoFile(v.id, v.title, hint);
     if (shared) {
       postedBtn.disabled = false;
-      shareBtn.textContent = '✅ Shared!';
+      shareBtn.textContent = '✅ Shared (Share Again)';
+      shareBtn.disabled = false;
     } else {
       shareBtn.disabled = false;
       shareBtn.textContent = '📤 Share';
