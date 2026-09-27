@@ -332,33 +332,33 @@ async function renderDashboard(app) {
   if (reminderResult.status === 'fulfilled') {
     const v = reminderResult.value;
     ra.innerHTML = `
-      <div class="card">
-        <div class="reminder-wrap">
-          <div>
-            <div class="video-player-wrap">
-              <video id="dash-video" controls preload="metadata"
-                src="/api/v1/videos/${v.id}/stream"
-                poster="">
-                Your browser does not support video playback.
-              </video>
-            </div>
+      <div class="card" style="padding: 0; overflow: hidden; border: none; box-shadow: 0 12px 32px rgba(12,66,40,0.12);">
+        <div class="reminder-wrap" style="grid-template-columns: 1fr; gap: 0;">
+          <div class="video-player-wrap" style="border-bottom-left-radius: 0; border-bottom-right-radius: 0; max-height: 55vh; border: none; box-shadow: none;">
+            <div style="position: absolute; top: 16px; left: 16px; background: var(--gold); color: #fff; padding: 4px 14px; border-radius: 99px; font-size: .75rem; font-weight: 800; z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">✨ Fresh Today</div>
+            <video id="dash-video" controls preload="metadata"
+              src="/api/v1/videos/${v.id}/stream"
+              poster="" style="width: 100%; height: 100%; object-fit: cover;">
+              Your browser does not support video playback.
+            </video>
           </div>
-          <div class="reminder-actions">
-            <div>
-              <div class="video-title">${escHtml(v.title)}</div>
-              <div class="video-meta">
-                ${v.category_name ? `<span>📁 ${escHtml(v.category_name)}</span>` : ''}
+          <div class="reminder-actions" style="border: none; border-top-left-radius: 0; border-top-right-radius: 0; background: var(--surface); padding: 24px; box-shadow: none;">
+            <div style="text-align: center; margin-bottom: 12px;">
+              <div class="video-title" style="font-size: 1.25rem; margin-bottom: 8px;">${escHtml(v.title)}</div>
+              <div class="video-meta" style="justify-content: center; font-size: .85rem;">
+                ${v.category_name ? `<span>📖 ${escHtml(v.category_name)}</span>` : ''}
                 ${v.duration_seconds ? `<span>⏱ ${fmtDuration(v.duration_seconds)}</span>` : ''}
               </div>
             </div>
-            <button class="whatsapp-btn" id="share-btn" data-id="${v.id}">
-              <span>📤</span> Share to WhatsApp
+            <button class="whatsapp-btn" id="share-btn" data-id="${v.id}" style="padding: 16px; font-size: 1.05rem;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              Share to WhatsApp Status
             </button>
-            <button class="btn btn-primary mark-posted-btn" id="posted-btn" data-id="${v.id}" disabled>
-              ✅ Mark as Posted
+            <button class="btn btn-secondary mark-posted-btn" id="posted-btn" data-id="${v.id}" disabled style="padding: 16px; font-size: 1.05rem;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> 
+              Mark as Posted Today
             </button>
-            <p class="text-muted" id="posted-hint">Share the video first, then mark it as posted.</p>
-            <a href="#/library" class="btn btn-secondary btn-sm">Browse Library</a>
+            <p class="text-muted" id="posted-hint" style="text-align: center; font-size: .85rem; margin-top: 4px; font-weight: 500;">Share the video first to verify.</p>
           </div>
         </div>
       </div>`;
@@ -716,10 +716,16 @@ function renderProgressWidget(p) {
   const today = new Date().toISOString().slice(0, 10);
   const days = p.days.map(d => {
     const isToday = d.date === today;
-    return `<div class="day-chip ${d.posted ? 'posted' : ''} ${isToday && !d.posted ? 'today' : ''}" title="${d.date}">${dayName(d.date)}</div>`;
+    const initial = dayName(d.date)[0];
+    return `<div class="day-chip ${d.posted ? 'posted' : ''} ${isToday && !d.posted ? 'today' : ''}" title="${d.date}">
+      ${d.posted ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' : initial}
+    </div>`;
   }).join('');
   return `
-    <div class="section-title">This week — ${p.total_posted} / ${p.goal} days</div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <div class="section-title" style="margin: 0;">Weekly Posting Goal</div>
+      <div style="font-weight: 800; color: var(--gold);">${pct}%</div>
+    </div>
     <div class="progress-bar-wrap"><div class="progress-bar" style="width:${Math.min(pct,100)}%"></div></div>
     <div class="progress-days">${days}</div>`;
 }
