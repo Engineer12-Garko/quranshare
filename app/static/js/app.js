@@ -372,7 +372,7 @@ async function renderDashboard(app) {
 
   try {
     const res = await API.get('/reminders/today');
-    const v = res.video;
+    const v = res;
     
     // Medium sized card with buttons BELOW
     const videoHtml = `
