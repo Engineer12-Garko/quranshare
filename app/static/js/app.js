@@ -197,7 +197,7 @@ function bindLogout(el) {
 function shell(active, user, innerHtml) {
   return `
     ${headerHtml(active, user)}
-    <main class="flex flex-col relative w-full pt-16 pb-24 bg-surface min-h-screen">
+    <main class="flex flex-col relative w-full pt-16 pb-24 bg-surface min-h-[100dvh] h-[100dvh] overflow-y-auto">
       ${innerHtml}
     </main>
     ${navHtml(active, user)}
@@ -366,7 +366,7 @@ async function renderDashboard(app) {
   if (!user) { navigate('/login'); return; }
 
   app.innerHTML = shell('#/dashboard', user, `
-    <div id="reminder-area" class="h-full w-full flex items-center justify-center">
+    <div id="reminder-area" class="flex-1 w-full flex items-center justify-center p-0 sm:p-4">
       <div class="loading-overlay"><div class="spinner"></div></div>
     </div>
   `);
@@ -378,7 +378,7 @@ async function renderDashboard(app) {
   if (reminderResult.id) {
     const v = reminderResult;
     ra.innerHTML = `
-      <div class="relative w-full max-w-[480px] aspect-[9/16] bg-black sm:rounded-[32px] overflow-hidden shadow-2xl flex flex-col justify-end mx-auto my-auto sm:my-4 h-full sm:h-auto sm:max-h-[85vh]">
+      <div class="relative w-full max-w-[480px] bg-black sm:rounded-[32px] overflow-hidden shadow-2xl flex flex-col justify-end mx-auto h-full max-h-full sm:h-auto sm:my-4 sm:aspect-[9/16] sm:max-h-[85vh]">
         <video id="dash-video" class="absolute inset-0 w-full h-full object-cover" controls preload="metadata" src="/api/v1/videos/${v.id}/stream"></video>
         
         <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-32 pb-6 px-space-md flex flex-col justify-end pointer-events-none">
