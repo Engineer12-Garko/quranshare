@@ -111,49 +111,16 @@ function clearAlert(container) {
 }
 
 function headerHtml(active, user) {
-  if (active === '#/dashboard') {
-    return `
-      <header class="fixed top-0 inset-x-0 z-50 bg-surface/85 backdrop-blur-xl pt-safe shadow-[0_1px_12px_rgba(14,59,46,0.04)]">
-        <div class="h-16 px-space-md flex items-center justify-between gap-space-sm">
-          <div class="flex items-center gap-space-sm min-w-0">
-            <button aria-label="Go back" class="w-11 h-11 -ml-1.5 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors shrink-0" onclick="history.back()">
-              <span class="material-symbols-outlined text-[24px]">arrow_back</span>
-            </button>
-            <img alt="QuranFlow Emblem Logo" class="h-7 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1UXcSMXmwXzqpHYydkhzU82UaqJNJtpyjLr5NmX6AA0XxAb2mPnEAouljylR41cqIhCtQVOTrgastVoW0LR-3muqnz87iZrQDsyt9yQwAhU0Yy7ydA5FS59sRhoyUVV6iCYRapB67jSC8rpSJy_JuFwwDZU1rmQztuY1x_4n5QyK7oNfSZuJRlrc7D4YnBDlLpnhGmEpo3hRWkUcnsPXzG4wKfqCu8SwMjRSzwe0XK1Sxl0Vp87WOMDmIUG"/>
-            <h1 class="font-headline-sm text-headline-sm text-primary tracking-tight truncate">Reflection Player</h1>
-          </div>
-          <div class="flex items-center gap-space-sm shrink-0">
-            <button aria-label="Share reflection" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors">
-              <span class="material-symbols-outlined text-[20px]">share</span>
-            </button>
-            <div class="relative flex items-center justify-center p-0.5 rounded-full bg-surface-container ring-1 ring-secondary/20">
-              <span class="material-symbols-outlined text-primary">person</span>
-            </div>
-          </div>
-        </div>
-      </header>
-    `;
-  }
+  // Hide top header on desktop (sm:hidden)
   return `
-    <header class="fixed top-0 inset-x-0 z-50 bg-surface/85 backdrop-blur-xl pt-safe shadow-[0_1px_12px_rgba(14,59,46,0.04)]">
+    <header class="sm:hidden fixed top-0 inset-x-0 z-50 bg-surface/85 backdrop-blur-xl pt-safe shadow-[0_1px_12px_rgba(14,59,46,0.04)]">
       <div class="h-16 px-space-md flex items-center justify-between gap-space-sm">
         <div class="flex items-center gap-space-sm min-w-0">
-          <img alt="QuranFlow Emblem Logo" class="h-8 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1UXcSMXmwXzqpHYydkhzU82UaqJNJtpyjLr5NmX6AA0XxAb2mPnEAouljylR41cqIhCtQVOTrgastVoW0LR-3muqnz87iZrQDsyt9yQwAhU0Yy7ydA5FS59sRhoyUVV6iCYRapB67jSC8rpSJy_JuFwwDZU1rmQztuY1x_4n5QyK7oNfSZuJRlrc7D4YnBDlLpnhGmEpo3hRWkUcnsPXzG4wKfqCu8SwMjRSzwe0XK1Sxl0Vp87WOMDmIUG"/>
-          <div class="flex flex-col min-w-0">
-            <div class="flex items-center gap-1.5">
-              <span class="font-headline-sm text-headline-sm text-primary tracking-tight truncate">QuranFlow</span>
-              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full bg-secondary/10 text-secondary font-label-sm text-[10px] uppercase font-semibold tracking-wider">Daily</span>
-            </div>
-            <span class="font-label-sm text-label-sm text-on-surface-variant truncate">Daily Reminders</span>
-          </div>
+          <img alt="QuranFlow" class="h-8 w-auto object-contain shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1UXcSMXmwXzqpHYydkhzU82UaqJNJtpyjLr5NmX6AA0XxAb2mPnEAouljylR41cqIhCtQVOTrgastVoW0LR-3muqnz87iZrQDsyt9yQwAhU0Yy7ydA5FS59sRhoyUVV6iCYRapB67jSC8rpSJy_JuFwwDZU1rmQztuY1x_4n5QyK7oNfSZuJRlrc7D4YnBDlLpnhGmEpo3hRWkUcnsPXzG4wKfqCu8SwMjRSzwe0XK1Sxl0Vp87WOMDmIUG"/>
+          <span class="font-headline-sm text-primary tracking-tight">QuranFlow</span>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
-          <button aria-label="Notifications" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors relative">
-            <span class="material-symbols-outlined text-[22px]">notifications</span>
-          </button>
-          <div class="relative flex items-center justify-center p-0.5 rounded-full bg-surface-container ring-1 ring-secondary/20 cursor-pointer" id="logout-trigger">
-            <span class="material-symbols-outlined text-primary">person</span>
-          </div>
+        <div class="relative flex items-center justify-center p-0.5 rounded-full bg-surface-container ring-1 ring-secondary/20 cursor-pointer" id="logout-trigger-mobile">
+          <span class="material-symbols-outlined text-primary">person</span>
         </div>
       </div>
     </header>
@@ -169,251 +136,70 @@ function navHtml(active, user) {
   if (user?.role === 'admin' || user?.role === 'curator') {
     links.push({ href: '#/admin', icon: 'tune', label: 'Curator' });
   }
-  const li = links.map(l => `
-    <a href="${l.href}" class="flex flex-col items-center justify-center min-w-[64px] h-12 gap-0.5 transition-all ${active === l.href ? 'text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}" data-path="${l.label.toLowerCase()}">
+  
+  // Mobile Bottom Nav
+  const mobileLi = links.map(l => `
+    <a href="${l.href}" class="flex flex-col items-center justify-center min-w-[64px] h-12 gap-0.5 transition-all ${active === l.href ? 'text-primary font-bold' : 'text-on-surface-variant hover:text-primary'}">
       <span class="material-symbols-outlined text-[24px]">${l.icon}</span>
       <span class="font-label-sm text-label-sm leading-none">${l.label}</span>
     </a>
   `).join('');
 
+  // Desktop Side Nav
+  const desktopLi = links.map(l => `
+    <a href="${l.href}" class="flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${active === l.href ? 'bg-primary-container text-on-primary-container font-bold' : 'text-on-surface-variant hover:bg-surface-container hover:text-primary'}">
+      <span class="material-symbols-outlined text-[24px]">${l.icon}</span>
+      <span class="font-label-lg">${l.label}</span>
+    </a>
+  `).join('');
+
   return `
-    <nav class="fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-4px_20px_-2px_rgba(14,59,46,0.06)]">
+    <!-- Mobile Bottom Nav -->
+    <nav class="sm:hidden fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-4px_20px_-2px_rgba(14,59,46,0.06)]">
       <div class="flex items-center justify-around h-16 px-2">
-        ${li}
+        ${mobileLi}
       </div>
     </nav>
+    
+    <!-- Desktop Side Nav -->
+    <aside class="hidden sm:flex fixed top-0 left-0 bottom-0 w-64 bg-surface border-r border-surface-container flex-col z-50">
+      <div class="p-6 flex items-center gap-3">
+        <img alt="QuranFlow" class="h-10 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1UXcSMXmwXzqpHYydkhzU82UaqJNJtpyjLr5NmX6AA0XxAb2mPnEAouljylR41cqIhCtQVOTrgastVoW0LR-3muqnz87iZrQDsyt9yQwAhU0Yy7ydA5FS59sRhoyUVV6iCYRapB67jSC8rpSJy_JuFwwDZU1rmQztuY1x_4n5QyK7oNfSZuJRlrc7D4YnBDlLpnhGmEpo3hRWkUcnsPXzG4wKfqCu8SwMjRSzwe0XK1Sxl0Vp87WOMDmIUG"/>
+        <h1 class="font-headline-md text-primary tracking-tight">QuranFlow</h1>
+      </div>
+      <div class="flex-1 px-4 flex flex-col gap-2">
+        ${desktopLi}
+      </div>
+      <div class="p-4 border-t border-surface-container">
+        <button id="logout-trigger-desktop" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-error hover:bg-error-container transition-colors">
+          <span class="material-symbols-outlined">logout</span>
+          <span class="font-label-lg">Sign Out</span>
+        </button>
+      </div>
+    </aside>
   `;
 }
 
 function bindLogout(el) {
-  el.querySelector('#logout-trigger')?.addEventListener('click', async () => {
+  const handler = async () => {
     if(!confirm("Sign out?")) return;
     try { await API.post('/auth/logout'); } catch {}
     clearUser();
     navigate('/');
-  });
+  };
+  el.querySelector('#logout-trigger-mobile')?.addEventListener('click', handler);
+  el.querySelector('#logout-trigger-desktop')?.addEventListener('click', handler);
 }
 
 function shell(active, user, innerHtml) {
   return `
     ${headerHtml(active, user)}
-    <main class="flex flex-col relative w-full pt-16 pb-24 bg-surface min-h-[100dvh] h-[100dvh] overflow-y-auto">
+    ${navHtml(active, user)}
+    <!-- Main content container dynamically adjusts layout based on screen size -->
+    <main class="flex flex-col relative w-full bg-surface min-h-[100dvh] h-[100dvh] overflow-y-auto pt-16 pb-24 sm:pt-0 sm:pb-0 sm:pl-64">
       ${innerHtml}
     </main>
-    ${navHtml(active, user)}
   `;
-}
-
-/* ══════════════════════════════════════════════════════════════════════════ */
-/* LANDING                                                                    */
-/* ══════════════════════════════════════════════════════════════════════════ */
-async function renderLanding(app) {
-  const user = await getUser();
-  if (user) { navigate('/dashboard'); return; }
-  app.innerHTML = `
-    <div class="landing">
-      <div class="landing-hero">
-        <div>
-          <h1>Quran<span>Flow</span></h1>
-          <p>Discover, watch, and share short Islamic reminder videos — and track your daily posting habit.</p>
-          <div class="landing-cta">
-            <a href="#/register" class="btn btn-primary">Get Started</a>
-            <a href="#/login"    class="btn btn-secondary">Sign In</a>
-          </div>
-        </div>
-      </div>
-      <div class="landing-features">
-        <div class="feature-card card">
-          <div class="feature-icon">🎬</div>
-          <h3>Curated Library</h3>
-          <p>Short Quranic reminders organized by topic — Quran, Dua, Salah, and more.</p>
-        </div>
-        <div class="feature-card card">
-          <div class="feature-icon">📱</div>
-          <h3>WhatsApp Sharing</h3>
-          <p>One tap to share your daily reminder as a WhatsApp Status.</p>
-        </div>
-        <div class="feature-card card">
-          <div class="feature-icon">📊</div>
-          <h3>Weekly Progress</h3>
-          <p>Track how consistently you share reminders every week.</p>
-        </div>
-        <div class="feature-card card">
-          <div class="feature-icon">⭐</div>
-          <h3>Daily Reminder</h3>
-          <p>A fresh reminder each day — avoiding ones you've recently posted.</p>
-        </div>
-      </div>
-    </div>`;
-}
-
-/* ══════════════════════════════════════════════════════════════════════════ */
-/* LOGIN                                                                      */
-/* ══════════════════════════════════════════════════════════════════════════ */
-async function renderLogin(app) {
-  const user = await getUser();
-  if (user) { navigate('/dashboard'); return; }
-  app.innerHTML = `
-    <div class="auth-page">
-      <div class="auth-card">
-        <div class="auth-logo">Quran<span>Flow</span></div>
-        <div class="auth-subtitle">Sign in to your account</div>
-        <form id="login-form">
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input id="email" type="email" required autocomplete="email" placeholder="you@example.com" />
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input id="password" type="password" required autocomplete="current-password" placeholder="••••••••" />
-          </div>
-          <button type="submit" class="btn btn-primary btn-full">Sign In</button>
-        </form>
-        <p class="auth-switch">No account? <a href="#/register">Register</a></p>
-      </div>
-    </div>`;
-
-  app.querySelector('#login-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    const btn = e.target.querySelector('button[type=submit]');
-    btn.disabled = true; btn.textContent = 'Signing in…';
-    clearAlert(app.querySelector('.auth-card'));
-    try {
-      await API.post('/auth/login', {
-        email:    app.querySelector('#email').value,
-        password: app.querySelector('#password').value,
-      });
-      clearUser();
-      navigate('/dashboard');
-    } catch (err) {
-      showAlert(app.querySelector('.auth-card'), err.message);
-      btn.disabled = false; btn.textContent = 'Sign In';
-    }
-  });
-}
-
-/* ══════════════════════════════════════════════════════════════════════════ */
-/* REGISTER                                                                   */
-/* ══════════════════════════════════════════════════════════════════════════ */
-async function renderRegister(app) {
-  const user = await getUser();
-  if (user) { navigate('/dashboard'); return; }
-  app.innerHTML = `
-    <div class="auth-page">
-      <div class="auth-card">
-        <div class="auth-logo">Quran<span>Flow</span></div>
-        <div class="auth-subtitle">Create your account</div>
-        <form id="reg-form">
-          <div class="form-group">
-            <label for="name">Display Name</label>
-            <input id="name" type="text" required placeholder="Your name" maxlength="100" />
-          </div>
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input id="email" type="email" required autocomplete="email" placeholder="you@example.com" />
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input id="password" type="password" required autocomplete="new-password" placeholder="At least 8 chars, 1 uppercase, 1 digit" />
-            <div class="form-hint">Min 8 characters, must include an uppercase letter and a digit.</div>
-          </div>
-          <div class="form-group">
-            <label for="whatsapp">WhatsApp Number <span style="font-weight:400">(optional)</span></label>
-            <input id="whatsapp" type="tel" placeholder="+1234567890" />
-          </div>
-          <div class="form-group">
-            <label for="gender">Gender</label>
-            <select id="gender" required>
-              <option value="" disabled selected>Select gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary btn-full">Create Account</button>
-        </form>
-        <p class="auth-switch">Already have an account? <a href="#/login">Sign in</a></p>
-      </div>
-    </div>`;
-
-  app.querySelector('#reg-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    const btn = e.target.querySelector('button[type=submit]');
-    btn.disabled = true; btn.textContent = 'Creating account…';
-    clearAlert(app.querySelector('.auth-card'));
-    const wa = app.querySelector('#whatsapp').value.trim();
-    try {
-      await API.post('/auth/register', {
-        display_name:     app.querySelector('#name').value.trim(),
-        email:            app.querySelector('#email').value.trim(),
-        password:         app.querySelector('#password').value,
-        gender:           app.querySelector('#gender').value,
-        ...(wa ? { whatsapp_number: wa } : {}),
-      });
-      clearUser();
-      navigate('/dashboard');
-    } catch (err) {
-      showAlert(app.querySelector('.auth-card'), err.message);
-      btn.disabled = false; btn.textContent = 'Create Account';
-    }
-  });
-}
-
-/* ══════════════════════════════════════════════════════════════════════════ */
-/* DASHBOARD                                                                  */
-/* ══════════════════════════════════════════════════════════════════════════ */
-async function renderDashboard(app) {
-  const user = await getUser();
-  if (!user) { navigate('/login'); return; }
-
-  app.innerHTML = shell('#/dashboard', user, `
-    <div id="reminder-area" class="flex-1 w-full flex items-center justify-center p-0 sm:p-4">
-      <div class="loading-overlay"><div class="spinner"></div></div>
-    </div>
-  `);
-  bindLogout(app);
-
-  const reminderResult = await API.get('/reminders/today').catch(e => e);
-
-  const ra = app.querySelector('#reminder-area');
-  if (reminderResult.id) {
-    const v = reminderResult;
-    ra.innerHTML = `
-      <div class="relative w-full max-w-[480px] bg-black sm:rounded-[32px] overflow-hidden shadow-2xl flex flex-col justify-end mx-auto h-full max-h-full sm:h-auto sm:my-4 sm:aspect-[9/16] sm:max-h-[85vh]">
-        <video id="dash-video" class="absolute inset-0 w-full h-full object-cover" controls preload="metadata" src="/api/v1/videos/${v.id}/stream"></video>
-        
-        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-32 pb-6 px-space-md flex flex-col justify-end pointer-events-none">
-          <div class="pointer-events-auto">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">✨ Fresh Today</span>
-              ${v.category_name ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">${escHtml(v.category_name)}</span>` : ''}
-              ${v.duration_seconds ? `<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface/20 backdrop-blur-md text-surface font-label-md">⏱ ${fmtDuration(v.duration_seconds)}</span>` : ''}
-            </div>
-            
-            <h2 class="text-surface font-display-lg-mobile mb-4 text-shadow-sm leading-tight">${escHtml(v.title)}</h2>
-            
-            <div class="flex items-center gap-space-sm">
-              <button id="share-btn" data-id="${v.id}" class="flex-1 h-14 bg-primary text-on-primary rounded-full font-label-lg flex items-center justify-center gap-2 shadow-[0_8px_16px_rgba(0,36,26,0.2)] hover:bg-primary/90 transition-colors">
-                <span class="material-symbols-outlined text-[20px]">send</span> Share
-              </button>
-              <button id="posted-btn" data-id="${v.id}" disabled class="flex-1 h-14 bg-surface/20 backdrop-blur-md text-surface rounded-full font-label-lg flex items-center justify-center gap-2 border border-surface/30 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface/30 transition-colors">
-                <span class="material-symbols-outlined text-[20px]">check_circle</span> Posted
-              </button>
-            </div>
-            
-            <p id="posted-hint" class="text-surface/80 text-center font-label-sm mt-3">Share to WhatsApp to mark as posted</p>
-          </div>
-        </div>
-      </div>
-    `;
-    bindShareAndPost(app, v.id, v.title);
-  } else {
-    const status = reminderResult.status;
-    if (status === 404) {
-      ra.innerHTML = `<div class="p-4 text-center mt-20"><div class="text-4xl mb-4">📭</div><p>No videos in the library yet. Check back soon!</p></div>`;
-    } else {
-      ra.innerHTML = `<div class="p-4 text-center mt-20"><p class="text-error">Could not load today's reminder: ${escHtml(reminderResult.message || 'Unknown error')}</p></div>`;
-    }
-  }
 }
 
 /* ── Core share helper (used by dashboard, library modal, library cards) ─── */
