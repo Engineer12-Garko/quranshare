@@ -433,54 +433,159 @@ async function shareVideoFile(videoId, title, statusEl) {
 
   function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 
+  // ── Diagnostics ────────────────────────────────────────────────
+  const diag = {
+    navigatorShareExists: typeof navigator.share === 'function',
+    navigatorCanShareExists: typeof navigator.canShare === 'function',
+    canShareFilesResult: null,
+    canShareError: null,
+    fileProperties: null,
+    fileShareAttempted: false,
+    fileShareResolved: false,
+    fileShareErrorName: null,
+    fileShareErrorMessage: null,
+    urlShareAttempted: false,
+    urlShareResolved: false,
+    urlShareErrorName: null,
+    urlShareErrorMessage: null,
+    fallbackSelected: null,
+    timestamp: Date.now(),
+  };
+
+  function logDiag() {
+    console.log('%c[QuranFlow DIAG]', 'color: cyan; font-weight: bold;', diag);
+  }
+
+  function showDiagnosticsPanel() {
+    // Remove existing panel if any
+    const existing = document.getElementById('quranflow-diag-panel');
+    if (existing) existing.remove();
+
+    const panel = document.createElement('div');
+    panel.id = 'quranflow-diag-panel';
+    panel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:50vh;overflow-y:auto;background:#1a1a2e;color:#e0e0e0;padding:16px;z-index:99999;font-family:monospace;font-size:13px;border-top:3px solid #00bcd4;box-shadow:0 -2px 20px rgba(0,0,0,0.5);';
+    const fields = [
+      ['navigator.share exists', diag.navigatorShareExists],
+      ['navigator.canShare exists', diag.navigatorCanShareExists],
+      ['canShare({files:[...]})', diag.canShareFilesResult],
+      ['canShare error', diag.canShareError],
+      ['File properties', diag.fileProperties],
+      ['File share called', diag.fileShareAttempted],
+      ['File share resolved', diag.fileShareResolved],
+      ['File share error.name', diag.fileShareErrorName],
+      ['File share error.message', diag.fileShareErrorMessage],
+      ['URL share called', diag.urlShareAttempted],
+      ['URL share resolved', diag.urlShareResolved],
+      ['URL share error.name', diag.urlShareErrorName],
+      ['URL share error.message', diag.urlShareErrorMessage],
+      ['Fallback selected', diag.fallbackSelected],
+      ['Timestamp', new Date(diag.timestamp).toISOString()],
+    ];
+    let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><strong style="color:#00bcd4;">[QuranFlow DIAGNOSTICS]</strong><button onclick="this.parentElement.parentElement.remove()" style="background:#444;color:#fff;border:none;padding:4px 12px;cursor:pointer;border-radius:4px;">X</button></div>';
+    for (const [k, v] of fields) {
+      const val = typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v);
+      const color = v === true ? '#4caf50' : v === false ? '#f44336' : v === null ? '#ff9800' : '#e0e0e0';
+      html += `<div style="margin:4px 0;"><span style="color:#90a4ae;">${k}:</span> <span style="color:${color};">${val}</span></div>`;
+    }
+    panel.innerHTML = html;
+    document.body.appendChild(panel);
+  }
+
   // ── Attempt 1: Web Share with actual File ──────────────────────────
-  // Try to use the Web Share API with a File object so the video
-  // goes directly to WhatsApp Status. We do NOT gate on canShare()
-  // because many browsers return false for video even though share() works.
+  // Diagnostics: check API availability BEFORE any share call
+  console.log('[QuranFlow DIAG] navigator.share:', typeof navigator.share);
+  console.log('[QuranFlow DIAG] navigator.canShare:', typeof navigator.canShare);
+
   if (navigator.canShare || navigator.share) {
     setStatus('Preparing video…');
     try {
       const resp = await fetch(streamUrl, { credentials: 'same-origin' });
       if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
-      const blob  = await resp.blob();
+      const blob = await resp.blob();
       const safeTitle = (title || 'reminder').replace(/[^a-zA-Z0-9]/g, '_');
-      const file  = new File([blob], `${safeTitle}.mp4`, { type: 'video/mp4' });
+      const file = new File([blob], `${safeTitle}.mp4`, { type: 'video/mp4' });
 
-      // Try sharing with files even if canShare() returned false
+      // Record file properties
+      diag.fileProperties = { name: file.name, size: file.size, type: file.type };
+      console.log('[QuranFlow DIAG] File properties:', diag.fileProperties);
+
+      // Test canShare({files:[file]}) BEFORE calling share
+      if (navigator.canShare) {
+        try {
+          const canShareResult = navigator.canShare({ files: [file] });
+          diag.canShareFilesResult = canShareResult;
+          console.log('[QuranFlow DIAG] canShare({files:[file]}):', canShareResult);
+        } catch (e) {
+          diag.canShareError = `${e.name}: ${e.message}`;
+          console.log('[QuranFlow DIAG] canShare({files:[file]}) THREW:', diag.canShareError);
+        }
+      }
+
+      // Record that we attempted file share
+      diag.fileShareAttempted = true;
+
+      // Try sharing with files — do NOT fall back to URL share until this is recorded
       try {
+        console.log('[QuranFlow DIAG] Calling navigator.share({files:[file], ...})...');
         await navigator.share({
           files: [file],
           title: title || 'Islamic Reminder 🕌',
           text: 'Watch this Quran reminder! 🕌',
         });
+        diag.fileShareResolved = true;
         setStatus('Shared! Now mark it as posted.');
+        diag.fallbackSelected = 'FILE_SHARE';
+        logDiag();
+        showDiagnosticsPanel();
         return true;
       } catch (shareErr) {
-        if (shareErr.name === 'AbortError') { setStatus('Share cancelled.'); return false; }
-        // canShare might be false — fall through to Attempt 2
+        diag.fileShareErrorName = shareErr.name;
+        diag.fileShareErrorMessage = shareErr.message;
+        console.log('[QuranFlow DIAG] navigator.share({files:[file]}) THREW:', shareErr.name, shareErr.message);
+        // Do NOT auto-fallback — record and fall through
+        if (shareErr.name === 'AbortError') {
+          diag.fallbackSelected = 'ABORTED';
+          logDiag();
+          showDiagnosticsPanel();
+          setStatus('Share cancelled.');
+          return false;
+        }
       }
     } catch (e) {
       if (e.name === 'AbortError') { setStatus('Share cancelled.'); return false; }
-      // Fetch failed — fall through to Attempt 2
+      console.log('[QuranFlow DIAG] Fetch failed:', e.message);
     }
   }
 
-  // ── Attempt 2: Web Share URL only ─────────────────────────────────
+  // ── Attempt 2: Web Share URL only ────────────────────────────────
+  // Only reached after file-sharing attempt has been recorded
+  diag.urlShareAttempted = true;
   if (navigator.share) {
     try {
+      console.log('[QuranFlow DIAG] Calling navigator.share({url})...');
       await navigator.share({
         title: 'Islamic Reminder 🕌',
         text:  title || 'Daily Islamic Reminder',
         url:   absoluteUrl,
       });
+      diag.urlShareResolved = true;
+      diag.fallbackSelected = 'URL_SHARE';
+      logDiag();
+      showDiagnosticsPanel();
       setStatus('Shared! Now mark it as posted.');
       return true;
     } catch (e) {
+      diag.urlShareErrorName = e.name;
+      diag.urlShareErrorMessage = e.message;
+      console.log('[QuranFlow DIAG] navigator.share({url}) THREW:', e.name, e.message);
       if (e.name === 'AbortError') { setStatus('Share cancelled.'); return false; }
     }
   }
 
-  // ── Attempt 3: Download + wa.me ────────────────────────────────────
+  // ── Attempt 3: Download + wa.me ──────────────────────────────────
+  diag.fallbackSelected = 'DOWNLOAD_WA_FALLBACK';
+  logDiag();
+  showDiagnosticsPanel();
   setStatus('Opening WhatsApp…');
   // Trigger a browser download of the video
   try {
