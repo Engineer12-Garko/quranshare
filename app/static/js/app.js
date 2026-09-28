@@ -361,6 +361,7 @@ async function renderDashboard(app) {
     `;
     
     app.querySelector('#reminder-area').innerHTML = videoHtml;
+    cacheVideoBlob(v.id);
 
     // Add interactivity logic
     const shareBtn = app.querySelector('#btn-share');
@@ -370,6 +371,13 @@ async function renderDashboard(app) {
       shareBtn.disabled = true; shareBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] animate-spin">sync</span> ...';
       try { await API.post(`/videos/${v.id}/share`); } catch {}
       const shared = await shareVideoFile(v.id, v.title, null);
+      if (!shared) {
+        shareBtn.innerHTML = '<span class="material-symbols-outlined text-[18px] animate-spin">sync</span> Preparing...';
+        const ok = await cacheVideoBlob(v.id);
+        if (!ok) { shareBtn.disabled = false; shareBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">send</span> Share'; return; }
+        shareBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">send</span> Tap to Share';
+        shareBtn.disabled = false; return;
+      }
       shareBtn.disabled = false;
       if (shared) {
         shareBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">send</span> Shared!';
@@ -732,7 +740,7 @@ function videoCard(v) {
 
 function bindVideoCards(container) {
   container.querySelectorAll('.watch-btn').forEach(btn => {
-    btn.addEventListener('click', () => openVideoModal(btn.dataset.id));
+    btn.addEventListener('click', () => { cacheVideoBlob(btn.dataset.id); openVideoModal(btn.dataset.id); });
   });
   container.querySelectorAll('.share-lib-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -740,8 +748,15 @@ function bindVideoCards(container) {
       const title = btn.closest('.video-card')?.querySelector('.video-title')?.textContent || '';
       btn.disabled = true; btn.textContent = '⏳';
       try { await API.post(`/videos/${id}/share`); } catch {}
-      await shareVideoFile(id, title, null);
-      btn.disabled = false; btn.textContent = '📤 Share';
+      const shared = await shareVideoFile(id, title, null);
+      if (!shared) {
+        btn.textContent = 'Preparing...';
+        const ok = await cacheVideoBlob(id);
+        if (!ok) { btn.disabled = false; btn.textContent = 'Share'; return; }
+        btn.textContent = 'Tap to Share';
+        btn.disabled = false; return;
+      }
+      btn.disabled = false; btn.textContent = 'Share';
     });
   });
 }
@@ -776,6 +791,7 @@ async function openVideoModal(videoId) {
       <p id="modal-hint" class="text-muted mt-8" style="font-size:.78rem">Share first, then mark as posted.</p>
     </div>`;
   document.body.appendChild(modal);
+  cacheVideoBlob(videoId);
   modal.querySelector('#modal-close').addEventListener('click', () => modal.remove());
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 
