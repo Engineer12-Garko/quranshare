@@ -74,8 +74,13 @@ def test_sync_requires_curator_or_admin(client, db):
 def test_sync_returns_summary_when_drive_not_configured(client, db):
     admin = _seed_user(db, email="adm2@example.com")
     _set_session(client, admin.id)
+    
+    from app.services.google_drive import DriveNotConfiguredError
+    
     # Drive is not configured in test env — should return failure summary gracefully
-    resp = client.post("/api/v1/admin/sync/google-drive")
+    with patch("app.services.google_drive.get_drive_service", side_effect=DriveNotConfiguredError("Not configured")):
+        resp = client.post("/api/v1/admin/sync/google-drive")
+        
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is False
@@ -85,7 +90,12 @@ def test_sync_returns_summary_when_drive_not_configured(client, db):
 def test_sync_curator_can_trigger(client, db):
     curator = _seed_user(db, email="cur2@example.com", role="curator")
     _set_session(client, curator.id)
-    resp = client.post("/api/v1/admin/sync/google-drive")
+    
+    from app.services.google_drive import DriveNotConfiguredError
+    
+    with patch("app.services.google_drive.get_drive_service", side_effect=DriveNotConfiguredError("Not configured")):
+        resp = client.post("/api/v1/admin/sync/google-drive")
+        
     assert resp.status_code == 200
     # Returns summary (may be failure due to no Drive config, but not 403)
     assert "success" in resp.json()
