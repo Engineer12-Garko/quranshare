@@ -1,6 +1,8 @@
-"""Reminder service — pick a daily video excluding recently shared ones."""
+"""Reminder service — deterministic daily video rotation."""
+import hashlib
+from datetime import date, datetime, timedelta, timezone
+
 from fastapi import HTTPException, status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -10,55 +12,65 @@ from app.models.video import Video
 
 def get_today_reminder(db: Session, user_id: int) -> Video:
     """
-    Return the next video in the user's queue.
-    The queue prioritizes active videos that have never been posted,
-    ordered by how recently they were added (newest first).
-    If all videos have been posted, it cycles back to the video
-    that was posted the longest time ago (FIFO for repeats).
+    Return a deterministic daily video for the user.
+
+    Selection rules:
+    1. Get all active videos.
+    2. Exclude videos posted in the last `recent_exclusion_limit` days.
+    3. Use user_id + current_date as a deterministic seed to select one video.
+    4. Same user + same date = same video (stable across refreshes).
+    5. Different date = normally different video (rotation).
+    6. Avoid yesterday's recommendation when multiple candidates exist.
     """
-    # 1. Subquery for all videos the user has EVER posted
-    posted_subq = (
-        db.query(PostingHistory.video_id)
-        .filter(PostingHistory.user_id == user_id)
-        .filter(PostingHistory.action == "posted")
-    ).subquery()
+    today = date.today()
 
-    # 2. Try to find an unposted video (FIFO queue: oldest unseen videos first)
-    candidate = (
+    # 1. Get all active videos
+    active_videos = (
         db.query(Video)
         .filter(Video.is_active.is_(True))
-        .filter(Video.id.not_in(posted_subq))
-        .order_by(Video.created_at.asc())
-        .first()
+        .order_by(Video.id.asc())
+        .all()
     )
 
-    if candidate:
-        return candidate
-
-    # 3. If all active videos are posted, repeat the one posted longest ago
-    most_recent_posts = (
-        db.query(
-            PostingHistory.video_id,
-            func.max(PostingHistory.posted_at).label('last_posted')
-        )
-        .filter(PostingHistory.user_id == user_id)
-        .filter(PostingHistory.action == "posted")
-        .group_by(PostingHistory.video_id)
-        .subquery()
-    )
-
-    candidate = (
-        db.query(Video)
-        .join(most_recent_posts, Video.id == most_recent_posts.c.video_id)
-        .filter(Video.is_active.is_(True))
-        .order_by(most_recent_posts.c.last_posted.asc())
-        .first()
-    )
-
-    if not candidate:
+    if not active_videos:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No videos available.",
         )
 
-    return candidate
+    # 2. Exclude recently posted videos (existing rule)
+    recent_exclusion_limit = settings.recent_exclusion_limit
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=recent_exclusion_limit)
+    recent_posted_ids = (
+        db.query(PostingHistory.video_id)
+        .filter(PostingHistory.user_id == user_id)
+        .filter(PostingHistory.action == "posted")
+        .filter(PostingHistory.posted_at >= cutoff_date)
+        .all()
+    )
+    recent_ids = {row[0] for row in recent_posted_ids}
+
+    eligible = [v for v in active_videos if v.id not in recent_ids]
+
+    # 3. Fallback: if all videos were recently posted, use all active videos
+    if not eligible:
+        eligible = active_videos
+
+    # 4. Deterministic daily selection using user_id + date as seed
+    seed_data = f"{user_id}:{today.isoformat()}"
+    seed_hash = hashlib.sha256(seed_data.encode()).hexdigest()
+    seed_int = int(seed_hash[:8], 16)
+
+    # 5. Try to avoid yesterday's recommendation
+    yesterday = date.fromordinal(today.toordinal() - 1)
+    yesterday_seed = f"{user_id}:{yesterday.isoformat()}"
+    yesterday_hash = hashlib.sha256(yesterday_seed.encode()).hexdigest()
+    yesterday_int = int(yesterday_hash[:8], 16)
+    yesterday_idx = yesterday_int % len(eligible)
+
+    # Select index, avoiding yesterday's choice when possible
+    selected_idx = seed_int % len(eligible)
+    if len(eligible) > 1 and selected_idx == yesterday_idx:
+        selected_idx = (selected_idx + 1) % len(eligible)
+
+    return eligible[selected_idx]
