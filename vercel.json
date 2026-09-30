@@ -20,5 +20,11 @@
       "src": "/(.*)",
       "dest": "api/index.py"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/v1/admin/sync/google-drive-cron",
+      "schedule": "*/15 * * * *"
+    }
   ]
 }
