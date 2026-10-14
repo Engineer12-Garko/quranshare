@@ -165,7 +165,7 @@ function navHtml(active) {
   const items = [
     { href: '#/home',    icon: 'home',          label: 'Home' },
     { href: '#/videos',  icon: 'movie',         label: 'Videos' },
-    { href: '#/duas',    icon: '🤲',            label: "Du'as" },
+    { href: '#/duas',    icon: 'self_improvement', label: "Du'as" },
     { href: '#/saved',   icon: 'bookmark',      label: 'Saved' },
   ];
   const links = items.map(i => `
@@ -317,7 +317,7 @@ async function renderVideos(app) {
             ${v.description ? `<div class="video-desc">${escHtml(v.description)}</div>` : ''}
             ${v.duration_seconds ? `<div class="video-duration">Duration: ${fmtDuration(v.duration_seconds)}</div>` : ''}
             <div class="video-actions">
-              <button class="btn btn-primary btn-sm" onclick="watchVideo(${v.id})">▶ Watch</button>
+              <button class="btn btn-primary btn-sm" onclick="watchVideo(${v.id})">▶ Watch Reminder</button>
               <button class="btn btn-primary btn-sm" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}')">Share to WhatsApp</button>
             </div>
           </div>
@@ -568,7 +568,33 @@ function toggleSetting(key) {
 /* ── Video Modal ───────────────────────────────────────────────────────── */
 function watchVideo(videoId) {
   cacheVideoBlob(videoId);
-  window.location.hash = '/videos';
+  const existing = document.getElementById('video-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'video-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML = `
+    <div style="background:var(--color-card);border-radius:20px;max-width:480px;width:100%;overflow:hidden;position:relative;">
+      <button onclick="document.getElementById('video-modal').remove()" style="position:absolute;top:12px;right:12px;z-index:10;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:1.2rem;cursor:pointer;">✕</button>
+      <video id="modal-video" controls autoplay style="width:100%;max-height:70vh;background:#000;" src="/api/v1/videos/${videoId}/stream"></video>
+      <div id="modal-video-info" style="padding:16px;"></div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  // Load video info
+  API.get(`/videos/${videoId}`).then(v => {
+    const info = document.getElementById('modal-video-info');
+    if (info) {
+      info.innerHTML = `
+        <div style="font-weight:800;font-size:1.1rem;margin-bottom:4px;">${escHtml(v.title)}</div>
+        ${v.description ? `<div style="font-size:.85rem;color:var(--color-muted);margin-bottom:12px;">${escHtml(v.description)}</div>` : ''}
+        ${v.duration_seconds ? `<div style="font-size:.8rem;color:var(--color-muted);">Duration: ${fmtDuration(v.duration_seconds)}</div>` : ''}
+        <button class="btn btn-primary btn-sm" style="margin-top:12px;width:100%;" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}'); document.getElementById('video-modal').remove();">Share to WhatsApp</button>
+      `;
+    }
+  }).catch(() => {});
 }
 
 /* ── Share ─────────────────────────────────────────────────────────────── */
