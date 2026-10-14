@@ -194,10 +194,10 @@ async function renderSplash(app) {
   app.innerHTML = `
     <div class="splash">
       <svg class="splash-logo" viewBox="0 0 120 120" fill="none">
-        <path d="M60 25c-8-10-22-14-35-14v70c13 0 27 4 35 14 8-10 22-14 35-14V11c-13 0-27 4-35 14z" fill="currentColor" opacity="0.9"/>
-        <path d="M60 25v70" stroke="white" stroke-width="2"/>
-        <path d="M25 11v70c13 0 27 4 35 14V25c-8-10-22-14-35-14z" fill="currentColor" opacity="0.7"/>
-        <path d="M95 11v70c-13 0-27-4-35-14V25c8-10 22-14 35-14z" fill="currentColor" opacity="0.7"/>
+        <path d="M60 20 C48 8, 32 4, 18 4 V84 C32 84, 48 88, 60 100 C72 88, 88 84, 102 84 V4 C88 4, 72 8, 60 20 Z" fill="currentColor" opacity="0.9"/>
+        <path d="M60 20 V100" stroke="white" stroke-width="2"/>
+        <path d="M18 4 V84 C32 84, 48 88, 60 100 V20 C48 8, 32 4, 18 4 Z" fill="currentColor" opacity="0.7"/>
+        <path d="M102 4 V84 C88 84, 72 88, 60 100 V20 C72 8, 88 4, 102 4 Z" fill="currentColor" opacity="0.7"/>
       </svg>
       <div class="splash-brand">TADABBUR</div>
       <p class="splash-tagline">Reflect. Understand. Remember.</p>
@@ -216,7 +216,7 @@ async function renderActivate(app) {
   const user = await getUser();
   if (user) { navigate('/home'); return; }
   app.innerHTML = `
-    <div class="page" style="display:flex;align-items:center;justify-content:center;min-height:100dvh;">
+    <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;">
       <div style="width:100%;max-width:400px;text-align:center;">
         <div style="font-size:1.5rem;font-weight:800;color:var(--color-primary);margin-bottom:8px;">TADABBUR</div>
         <p style="color:var(--color-muted);margin-bottom:24px;">Enter your name to activate your profile.</p>
@@ -254,11 +254,10 @@ async function renderHome(app) {
   try {
     const video = await API.get('/reminders/today');
     const verse = todayVerse();
-    const isVideoSaved = isSaved('video', video.id);
     app.querySelector('#home-content').innerHTML = `
       <div class="page-header">
         <span class="brand">TADABBUR</span>
-        <a href="#/settings" class="icon-btn material-symbols-outlined">menu</a>
+        <button class="icon-btn material-symbols-outlined" onclick="navigate('/settings')">menu</button>
       </div>
       <h1 class="greeting">Assalamu Alaikum</h1>
       <p class="greeting-sub">Take a moment to reflect.</p>
@@ -269,7 +268,7 @@ async function renderHome(app) {
           <div class="reminder-title">${escHtml(video.title)}</div>
           ${video.description ? `<p class="reminder-desc">${escHtml(video.description)}</p>` : ''}
           <div class="reminder-actions">
-            <a href="#/videos" class="watch-link">▶ Watch Reminder</a>
+            <span class="watch-link">▶ Watch Reminder</span>
             <button class="btn btn-primary btn-sm" onclick="shareVideoFile(${video.id}, '${escHtml(video.title).replace(/'/g, "\\'")}')">Share to WhatsApp</button>
           </div>
         </div>
@@ -297,6 +296,13 @@ async function renderVideos(app) {
 
   const categories = ['All', "Qur'an", "Du'a", 'Akhirah', 'More'];
 
+  function pillHtml() {
+    return `<div class="pill-row-inner">` + categories.map((c, i) =>
+      (i > 0 ? '<span class="pill-divider">|</span>' : '') +
+      `<button class="pill ${_videoCategory === c ? 'active' : ''}" onclick="setVideoCategory('${c}')">${c}</button>`
+    ).join('') + `</div>`;
+  }
+
   async function loadVideos() {
     const el = app.querySelector('#videos-content');
     if (!el) return;
@@ -317,7 +323,7 @@ async function renderVideos(app) {
             ${v.description ? `<div class="video-desc">${escHtml(v.description)}</div>` : ''}
             ${v.duration_seconds ? `<div class="video-duration">Duration: ${fmtDuration(v.duration_seconds)}</div>` : ''}
             <div class="video-actions">
-              <button class="btn btn-primary btn-sm" onclick="watchVideo(${v.id})">▶ Watch Reminder</button>
+              <span class="watch-link">▶ Watch Reminder</span>
               <button class="btn btn-primary btn-sm" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}')">Share to WhatsApp</button>
             </div>
           </div>
@@ -334,9 +340,7 @@ async function renderVideos(app) {
           <span class="search-icon material-symbols-outlined">search</span>
           <input id="video-search" class="search-input" type="text" placeholder="Search Reminders..." value="${escHtml(_videoSearch)}" />
         </div>
-        <div class="pill-row">
-          ${categories.map(c => `<button class="pill ${_videoCategory === c ? 'active' : ''}" onclick="setVideoCategory('${c}')">${c}</button>`).join('')}
-        </div>
+        <div class="pill-row">${pillHtml()}</div>
         <div id="video-list">${cards || '<div class="empty-state"><p>No videos found.</p></div>'}</div>`;
 
       const searchInput = el.querySelector('#video-search');
@@ -353,7 +357,7 @@ async function renderVideos(app) {
   loadVideos();
 }
 
-function setVideoCategory(cat) { _videoCategory = cat; renderVideos(document.getElementById('app')); }
+function setVideoCategory(cat) { _videoCategory = cat; _videoSearch = ''; renderVideos(document.getElementById('app')); }
 
 /* ── Du'as Screen ──────────────────────────────────────────────────────── */
 let _duaCategory = 'All';
@@ -365,18 +369,24 @@ async function renderDuas(app) {
   app.innerHTML = `${navHtml('#/duas')}<div class="page" id="duas-content"><div class="empty-state"><p>Loading...</p></div></div>`;
 
   const categories = ['All', 'Morning', 'Evening', 'Sleep', 'More'];
-  let activeCat = _duaCategory;
-  let searchQ = _duaSearch;
 
   const duaOfDay = todayDua();
   const moreDuas = DUAS.filter(d => d.id !== duaOfDay.id);
 
+  function pillHtml() {
+    return `<div class="pill-row-inner">` + categories.map((c, i) =>
+      (i > 0 ? '<span class="pill-divider">|</span>' : '') +
+      `<button class="pill ${_duaCategory === c ? 'active' : ''}" onclick="setDuaCategory('${c}')">${c}</button>`
+    ).join('') + `</div>`;
+  }
+
   function renderList() {
     const el = app.querySelector('#duas-content');
     if (!el) return;
+
     let filtered = DUAS;
-    if (activeCat !== 'All') filtered = filtered.filter(d => d.category === activeCat);
-    if (searchQ) filtered = filtered.filter(d => d.title.toLowerCase().includes(searchQ.toLowerCase()));
+    if (_duaCategory !== 'All') filtered = filtered.filter(d => d.category === _duaCategory);
+    if (_duaSearch) filtered = filtered.filter(d => d.title.toLowerCase().includes(_duaSearch.toLowerCase()));
 
     el.innerHTML = `
       <div class="page-header">
@@ -386,18 +396,16 @@ async function renderDuas(app) {
       <p class="page-subtitle">Supplications For Everyday</p>
       <div class="search-wrap">
         <span class="search-icon material-symbols-outlined">search</span>
-        <input id="dua-search" class="search-input" type="text" placeholder="Search du'as..." value="${escHtml(searchQ)}" />
+        <input id="dua-search" class="search-input" type="text" placeholder="Search du'as..." value="${escHtml(_duaSearch)}" />
       </div>
-      <div class="pill-row">
-        ${categories.map(c => `<button class="pill ${activeCat === c ? 'active' : ''}" onclick="setDuaCategory('${c}')">${c}</button>`).join('')}
-      </div>
+      <div class="pill-row">${pillHtml()}</div>
       <div class="section-title">DU'A OF THE DAY</div>
       <div class="dua-card">
         <div class="dua-arabic">${duaOfDay.arabic}</div>
         <div class="dua-translation">${duaOfDay.translation}</div>
         <div class="dua-actions">
           <button class="btn btn-primary btn-sm">Read Du'a →</button>
-          <button class="btn btn-outline btn-sm" onclick="toggleSaved('dua', '${duaOfDay.id}', '${escHtml(duaOfDay.title).replace(/'/g, "\\'")}'); renderDuas(document.getElementById('app'));">Save</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleSaved('dua', '${duaOfDay.id}', '${escHtml(duaOfDay.title).replace(/'/g, "\\'")}'); renderDuas(document.getElementById('app'));">🔖 Save</button>
         </div>
       </div>
       <div class="section-title">MORE DAILY DU'AS</div>
@@ -417,7 +425,7 @@ async function renderDuas(app) {
     let searchTimer;
     searchInput.addEventListener('input', e => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { _duaSearch = e.target.value.trim(); activeCat = _duaCategory; renderList(); }, 350);
+      searchTimer = setTimeout(() => { _duaSearch = e.target.value.trim(); renderList(); }, 350);
     });
   }
 
@@ -448,24 +456,23 @@ async function renderSaved(app) {
         </div>
         <div class="saved-info">
           <div class="saved-title">${escHtml(s.title)}</div>
-          <div class="saved-meta">Video Reminder</div>
           <div class="saved-actions">
             <button class="btn btn-primary btn-sm" onclick="watchVideo(${s.id})">Watch Reminder</button>
-            <button class="bookmark-btn" onclick="toggleSaved('video', ${s.id}); renderSaved(document.getElementById('app'));" title="Remove">★</button>
+            <button class="bookmark-btn" onclick="toggleSaved('video', ${s.id}); renderSaved(document.getElementById('app'));" title="Remove">🔖</button>
           </div>
         </div>
       </div>
     `).join('');
 
     const duaCards = duaItems.map(s => {
-      const d = duaMap[s.id] || { title: s.title, icon: '📖' };
+      const d = duaMap[s.id] || { title: s.title, icon: '📖', category: '' };
       return `
-        <div class="dua-list-card">
-          <div class="dua-icon">${d.icon}</div>
+        <div class="dua-saved-card">
           <div class="dua-list-info">
             <div class="dua-list-title">${escHtml(d.title)}</div>
+            ${d.category ? `<div class="dua-list-sub">${d.category}</div>` : ''}
           </div>
-          <button class="bookmark-btn" onclick="toggleSaved('dua', '${s.id}'); renderSaved(document.getElementById('app'));" title="Remove">★</button>
+          <button class="bookmark-btn" onclick="toggleSaved('dua', '${s.id}'); renderSaved(document.getElementById('app'));" title="Remove">🔖</button>
         </div>
       `;
     }).join('');
@@ -477,9 +484,13 @@ async function renderSaved(app) {
       <h1 class="page-title">Your Saved Reminders</h1>
       <p class="page-subtitle">Keep the reminders that matter to you.</p>
       <div class="pill-row">
-        <button class="pill active">All</button>
-        <button class="pill">Videos</button>
-        <button class="pill">Du'as</button>
+        <div class="pill-row-inner">
+          <button class="pill active">All</button>
+          <span class="pill-divider">|</span>
+          <button class="pill">Videos</button>
+          <span class="pill-divider">|</span>
+          <button class="pill">Du'as</button>
+        </div>
       </div>
       ${videoItems.length === 0 && duaItems.length === 0 ? `
         <div class="empty-state">
@@ -489,7 +500,7 @@ async function renderSaved(app) {
         </div>
       ` : `
         ${videoItems.length > 0 ? `<div class="section-title">SAVED VIDEOS</div>${videoCards}` : ''}
-        ${duaItems.length > 0 ? `<div class="section-title">SAVED DU'AS</div>${duaCards}` : ''}
+        ${duaItems.length > 0 ? `<div class="section-title">SAVED DU'AS</div><div class="dua-saved-grid">${duaCards}</div>` : ''}
       `}
     `;
   }
@@ -510,7 +521,7 @@ async function renderSettings(app) {
     el.innerHTML = `
       <div class="page-header">
         <span class="brand">TADABBUR</span>
-        <a href="#/settings" class="icon-btn material-symbols-outlined">settings</a>
+        <div class="gear-icon material-symbols-outlined">settings</div>
       </div>
       <h1 class="page-title">Notification & Reminders</h1>
       <p class="page-subtitle">Stay connected to daily reminders.</p>
@@ -528,10 +539,11 @@ async function renderSettings(app) {
         <div class="settings-info">
           <div class="settings-label">Reminder time</div>
         </div>
-        <span style="font-weight:700;color:var(--color-text);">7:00 AM ›</span>
+        <span class="settings-value">7:00 AM</span>
+        <span class="settings-arrow">›</span>
       </div>
       <div class="settings-card">
-        <div class="settings-icon material-symbols-outlined">hands</div>
+        <div class="settings-icon material-symbols-outlined">self_improvement</div>
         <div class="settings-info">
           <div class="settings-label">Daily Du'a</div>
           <div class="settings-desc">A daily supplication to reflect on.</div>
@@ -550,7 +562,7 @@ async function renderSettings(app) {
           <div class="settings-label">Contact Support</div>
           <div class="settings-desc">Reach out for help or to provide feedback.</div>
         </div>
-        <span style="color:var(--color-primary);font-weight:700;">›</span>
+        <span class="settings-arrow">›</span>
       </div>
     `;
   }
@@ -583,7 +595,6 @@ function watchVideo(videoId) {
   document.body.appendChild(modal);
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 
-  // Load video info
   API.get(`/videos/${videoId}`).then(v => {
     const info = document.getElementById('modal-video-info');
     if (info) {
