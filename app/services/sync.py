@@ -47,17 +47,22 @@ def sync_drive(db: Session) -> dict:
     errors: list[str] = []
     seen_drive_ids: set[str] = set()
     
-    # Breadth-first search queue to crawl folders recursively
-    folders_to_process = [root_folder]
+    # Breadth-first search queue to crawl folders recursively.
+    # The root folder is not itself a category; immediate child folders are.
+    folders_to_process = [(root_folder, None)]
 
     while folders_to_process:
-        current_folder = folders_to_process.pop(0)
+        current_folder, category_id = folders_to_process.pop(0)
         
         # 1. Fetch subfolders of current folder and add to queue
         try:
             subfolders = drive.list_subfolders(current_folder)
             for sf in subfolders:
-                folders_to_process.append(sf["id"])
+                subfolder_category_id = category_map.get(
+                    sf.get("name", "").strip().lower(),
+                    category_id,
+                )
+                folders_to_process.append((sf["id"], subfolder_category_id))
         except Exception as exc:
             errors.append(f"Failed to list subfolders for {current_folder}: {exc}")
             failed += 1
@@ -80,7 +85,7 @@ def sync_drive(db: Session) -> dict:
                     # Update existing record (O(1) lookup)
                     video = existing[drive_id]
                     video.title = f.get("name", video.title)
-                    video.category_id = None # We no longer use categories
+                    video.category_id = category_id
                     video.drive_web_view_link = f.get("webViewLink")
                     video.drive_download_link = f.get("webContentLink")
                     video.is_active = True
@@ -90,7 +95,7 @@ def sync_drive(db: Session) -> dict:
                     video = Video(
                         drive_file_id=drive_id,
                         title=f.get("name", drive_id),
-                        category_id=None,
+                        category_id=category_id,
                         drive_web_view_link=f.get("webViewLink"),
                         drive_download_link=f.get("webContentLink"),
                         is_active=True,

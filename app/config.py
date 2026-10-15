@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from typing import Literal
 
 
@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Google Drive
     google_service_account: str = "{}"
     google_drive_root_folder_id: str = ""
+    vercel_cron_secret: str = ""
 
     # Reminder
     recent_exclusion_limit: int = 7
@@ -37,6 +38,24 @@ class Settings(BaseSettings):
                 "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
             )
         return v
+
+    @model_validator(mode="after")
+    def production_settings_must_be_safe(self) -> "Settings":
+        if self.app_env == "production":
+            missing = []
+            if not self.vercel_cron_secret:
+                missing.append("VERCEL_CRON_SECRET")
+            if not self.google_service_account or self.google_service_account == "{}":
+                missing.append("GOOGLE_SERVICE_ACCOUNT")
+            if not self.google_drive_root_folder_id:
+                missing.append("GOOGLE_DRIVE_ROOT_FOLDER_ID")
+            if not self.cookie_secure:
+                missing.append("COOKIE_SECURE=true")
+            if missing:
+                raise ValueError(
+                    "Production configuration is incomplete: " + ", ".join(missing)
+                )
+        return self
 
 
 settings = Settings()

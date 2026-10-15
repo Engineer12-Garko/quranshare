@@ -3,6 +3,7 @@ Tests for GET /api/v1/videos and GET /api/v1/videos/{id}.
 """
 from app.models.category import Category
 from app.models.video import Video
+from unittest.mock import patch
 
 
 def _seed_video(db, title="Test Video", drive_file_id=None, category_id=None, is_active=True):
@@ -91,3 +92,34 @@ def test_get_inactive_video_returns_404(client, db):
 def test_get_nonexistent_video_returns_404(client):
     resp = client.get("/api/v1/videos/99999")
     assert resp.status_code == 404
+
+
+def test_video_stream_forwards_http_range_header(client, db):
+    video = _seed_video(db, "Range Vid", drive_file_id="range1")
+    from app.models.user import User
+    from app.utils.security import hash_password
+    from itsdangerous import URLSafeSerializer
+    from app.config import settings
+
+    user = User(
+        email="range@example.com",
+        password_hash=hash_password("Secret123"),
+        display_name="Range User",
+        role="user",
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+    serializer = URLSafeSerializer(settings.secret_key, salt="session")
+    client.cookies.set("session", serializer.dumps({"user_id": user.id}))
+
+    with patch("app.routes.videos.stream_video") as stream_video:
+        stream_video.return_value = {"ok": True}
+        response = client.get(
+            f"/api/v1/videos/{video.id}/stream",
+            headers={"Range": "bytes=0-99"},
+        )
+
+    assert response.status_code == 200
+    stream_video.assert_called_once()
+    assert stream_video.call_args.kwargs["range_header"] == "bytes=0-99"

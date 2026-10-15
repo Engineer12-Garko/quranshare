@@ -24,7 +24,9 @@ pip install -r requirements.txt
 # 3. Configure environment
 copy .env.example .env       # Windows
 # cp .env.example .env       # macOS/Linux
-# Edit .env — set DATABASE_URL and SECRET_KEY at minimum
+# Edit .env — set DATABASE_URL and SECRET_KEY at minimum.
+# Production additionally requires GOOGLE_SERVICE_ACCOUNT,
+# GOOGLE_DRIVE_ROOT_FOLDER_ID, VERCEL_CRON_SECRET, and COOKIE_SECURE=true.
 
 # 4. Run database migrations
 alembic upgrade head
@@ -71,3 +73,6 @@ quranflow/
 
 See `.env.example` for all required and optional variables.
 **Never commit `.env` to version control.**
+
+For production, the application refuses to start if Google Drive, cron
+authentication, or secure-cookie settings are incomplete.

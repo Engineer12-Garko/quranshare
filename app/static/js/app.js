@@ -44,6 +44,10 @@ async function cacheVideoBlob(videoId) {
   } catch { return false; }
 }
 
+function videoStreamUrl(videoId) {
+  return `${window.location.origin}/api/v1/videos/${videoId}/stream`;
+}
+
 /* ── Static Data: Du'as ────────────────────────────────────────────────── */
 const DUAS = [
   {
@@ -268,7 +272,7 @@ async function renderHome(app) {
           <div class="reminder-title">${escHtml(video.title)}</div>
           ${video.description ? `<p class="reminder-desc">${escHtml(video.description)}</p>` : ''}
           <div class="reminder-actions">
-            <span class="watch-link">▶ Watch Reminder</span>
+            <button class="watch-link watch-link-button" onclick="watchVideo(${video.id})" type="button">▶ Watch Reminder</button>
             <button class="btn btn-primary btn-sm" onclick="shareVideoFile(${video.id}, '${escHtml(video.title).replace(/'/g, "\\'")}')">Share to WhatsApp</button>
           </div>
         </div>
@@ -288,18 +292,25 @@ async function renderHome(app) {
 /* ── Videos Screen ─────────────────────────────────────────────────────── */
 let _videoSearch = '';
 let _videoCategory = 'All';
+let _videoCategoryId = null;
 
 async function renderVideos(app) {
   const user = await getUser();
   if (!user) { navigate('/'); return; }
   app.innerHTML = `${navHtml('#/videos')}<div class="page" id="videos-content"><div class="empty-state"><p>Loading...</p></div></div>`;
 
-  const categories = ['All', "Qur'an", "Du'a", 'Akhirah', 'More'];
+  let categories = [{ id: null, name: 'All' }];
+  try {
+    const loadedCategories = await API.get('/categories', 300);
+    categories = categories.concat((loadedCategories || []).map(c => ({ id: c.id, name: c.name })));
+  } catch (e) {
+    console.error('Unable to load video categories', e);
+  }
 
   function pillHtml() {
     return `<div class="pill-row-inner">` + categories.map((c, i) =>
       (i > 0 ? '<span class="pill-divider">|</span>' : '') +
-      `<button class="pill ${_videoCategory === c ? 'active' : ''}" onclick="setVideoCategory('${c}')">${c}</button>`
+      `<button class="pill ${_videoCategory === c.name ? 'active' : ''}" onclick='setVideoCategory(${JSON.stringify(c.name)}, ${c.id === null ? 'null' : c.id})'>${escHtml(c.name)}</button>`
     ).join('') + `</div>`;
   }
 
@@ -309,21 +320,21 @@ async function renderVideos(app) {
     try {
       const qs = new URLSearchParams({ skip: 0, limit: 100 });
       if (_videoSearch) qs.set('search', _videoSearch);
+      if (_videoCategoryId !== null) qs.set('category_id', _videoCategoryId);
       const res = await API.get('/videos?' + qs.toString(), 60);
       let items = res.items || [];
-      if (_videoCategory !== 'All') items = items.filter(v => (v.title || '').toLowerCase().includes(_videoCategory.toLowerCase()));
 
       const cards = items.map(v => `
         <div class="video-card">
           <div class="video-thumb">
-            <div class="play-icon material-symbols-outlined">play_arrow</div>
+            <button class="play-icon material-symbols-outlined" onclick="watchVideo(${v.id})" type="button" aria-label="Watch ${escHtml(v.title)}">play_arrow</button>
           </div>
           <div class="video-info">
             <div class="video-title">${escHtml(v.title)}</div>
             ${v.description ? `<div class="video-desc">${escHtml(v.description)}</div>` : ''}
             ${v.duration_seconds ? `<div class="video-duration">Duration: ${fmtDuration(v.duration_seconds)}</div>` : ''}
             <div class="video-actions">
-              <span class="watch-link">▶ Watch Reminder</span>
+              <button class="watch-link watch-link-button" onclick="watchVideo(${v.id})" type="button">▶ Watch Reminder</button>
               <button class="btn btn-primary btn-sm" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}')">Share to WhatsApp</button>
             </div>
           </div>
@@ -357,7 +368,12 @@ async function renderVideos(app) {
   loadVideos();
 }
 
-function setVideoCategory(cat) { _videoCategory = cat; _videoSearch = ''; renderVideos(document.getElementById('app')); }
+function setVideoCategory(cat, categoryId) {
+  _videoCategory = cat;
+  _videoCategoryId = categoryId === undefined ? null : categoryId;
+  _videoSearch = '';
+  renderVideos(document.getElementById('app'));
+}
 
 /* ── Du'as Screen ──────────────────────────────────────────────────────── */
 let _duaCategory = 'All';
@@ -579,7 +595,6 @@ function toggleSetting(key) {
 
 /* ── Video Modal ───────────────────────────────────────────────────────── */
 function watchVideo(videoId) {
-  cacheVideoBlob(videoId);
   const existing = document.getElementById('video-modal');
   if (existing) existing.remove();
 
@@ -589,11 +604,17 @@ function watchVideo(videoId) {
   modal.innerHTML = `
     <div style="background:var(--color-card);border-radius:20px;max-width:480px;width:100%;overflow:hidden;position:relative;">
       <button onclick="document.getElementById('video-modal').remove()" style="position:absolute;top:12px;right:12px;z-index:10;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:1.2rem;cursor:pointer;">✕</button>
-      <video id="modal-video" controls autoplay style="width:100%;max-height:70vh;background:#000;" src="/api/v1/videos/${videoId}/stream"></video>
-      <div id="modal-video-info" style="padding:16px;"></div>
+      <video id="modal-video" controls autoplay playsinline preload="metadata" style="width:100%;max-height:70vh;background:#000;" src="/api/v1/videos/${videoId}/stream"></video>
+      <div id="modal-video-info" style="padding:16px;"><div style="color:var(--color-muted);">Loading video...</div></div>
     </div>`;
   document.body.appendChild(modal);
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  const player = modal.querySelector('#modal-video');
+  player.addEventListener('error', () => {
+    const info = modal.querySelector('#modal-video-info');
+    if (info) info.innerHTML = '<div style="color:#a33;">Unable to load this video. Please try again later.</div>';
+  }, { once: true });
 
   API.get(`/videos/${videoId}`).then(v => {
     const info = document.getElementById('modal-video-info');
@@ -606,19 +627,42 @@ function watchVideo(videoId) {
       `;
     }
   }).catch(() => {});
+
+  // Warm the file cache without blocking playback or the user's click gesture.
+  cacheVideoBlob(videoId).catch(() => {});
 }
 
 /* ── Share ─────────────────────────────────────────────────────────────── */
 async function shareVideoFile(videoId, title) {
-  const cachedBlob = _videoCache.get(videoId);
-  if (!cachedBlob) return false;
-  const safeTitle = (title || 'reminder').replace(/[^a-zA-Z0-9]/g, '_');
-  const file = new File([cachedBlob], `${safeTitle}.mp4`, { type: 'video/mp4' });
+  const shareUrl = videoStreamUrl(videoId);
+  const shareText = `${title || 'Tadabbur Reminder'}\n${shareUrl}`;
+  let cachedBlob = _videoCache.get(videoId);
+
   try {
-    await navigator.share({ files: [file], title: title || 'Tadabbur Reminder', text: 'Reflect on this reminder.' });
+    if (cachedBlob && navigator.share) {
+      const safeTitle = (title || 'reminder').replace(/[^a-zA-Z0-9]/g, '_');
+      const file = new File([cachedBlob], `${safeTitle}.mp4`, { type: 'video/mp4' });
+      if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: title || 'Tadabbur Reminder', text: 'Reflect on this reminder.' });
+      } else {
+        throw new Error('File sharing is not supported on this device.');
+      }
+    } else if (navigator.share) {
+      // Preserve the click gesture: awaiting a blob download here breaks Web Share.
+      await navigator.share({ title: title || 'Tadabbur Reminder', text: shareText, url: shareUrl });
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+    }
+    await API.post(`/videos/${videoId}/share`);
     return true;
   } catch (e) {
     if (e.name === 'AbortError') return false;
+    if (!cachedBlob && e.name === 'NotAllowedError') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+      await API.post(`/videos/${videoId}/share`);
+      return true;
+    }
+    console.error('Unable to share video', e);
     return false;
   }
 }
@@ -627,7 +671,22 @@ async function shareVideoFile(videoId, title) {
 async function renderHistory(app) {
   const user = await getUser();
   if (!user) { navigate('/'); return; }
-  app.innerHTML = `${navHtml('')}<div class="page"><div class="empty-state"><p>History coming soon.</p></div></div>`;
+  app.innerHTML = `${navHtml('')}<div class="page" id="history-content"><div class="empty-state"><p>Loading...</p></div></div>`;
+  try {
+    const history = await API.get('/history?skip=0&limit=100');
+    const rows = (history.items || []).map(item => `
+      <div class="card" style="margin-bottom:12px;">
+        <strong>Video #${item.video_id}</strong>
+        <div style="color:var(--color-muted);font-size:.85rem;">${escHtml(item.action.replace('_', ' '))} · ${new Date(item.posted_at).toLocaleString()}</div>
+      </div>`).join('');
+    app.querySelector('#history-content').innerHTML = `<div class="page">
+      <h1 class="page-title">History</h1>
+      <p class="page-subtitle">Your recent reminder activity.</p>
+      ${rows || '<div class="empty-state"><p>No activity yet.</p></div>'}
+    </div>`;
+  } catch (e) {
+    app.querySelector('#history-content').innerHTML = `<div class="empty-state"><p>${escHtml(e.message)}</p></div>`;
+  }
 }
 
 async function renderProgress(app) {
@@ -635,9 +694,14 @@ async function renderProgress(app) {
   if (!user) { navigate('/'); return; }
   try {
     const p = await API.get('/progress/weekly', 60);
+    const days = (p.days || []).map(day =>
+      `<div class="card" style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <span>${escHtml(day.date)}</span><strong>${day.posted ? `${day.count} posted` : 'Not posted'}</strong>
+      </div>`).join('');
     app.innerHTML = `${navHtml('')}<div class="page">
       <h1 class="page-title">Weekly Progress</h1>
-      <div class="card"><p>Posted ${p.posted_count || 0} of 7 days this week.</p></div>
+      <div class="card"><p>Posted ${p.total_posted || 0} reminders this week.</p><p>${escHtml(p.week_start)} to ${escHtml(p.week_end)}</p></div>
+      <div style="margin-top:16px;">${days}</div>
     </div>`;
   } catch (e) {
     app.innerHTML = `${navHtml('')}<div class="page"><div class="empty-state"><p>${escHtml(e.message)}</p></div></div>`;
@@ -661,8 +725,35 @@ async function renderProfile(app) {
 async function renderAdmin(app) {
   const user = await getUser();
   if (!user || (user.role !== 'admin' && user.role !== 'curator')) { navigate('/home'); return; }
-  app.innerHTML = `${navHtml('')}<div class="page">
-    <h1 class="page-title">Admin</h1>
-    <div class="card"><p>Admin panel coming soon.</p></div>
-  </div>`;
+  app.innerHTML = `${navHtml('')}<div class="page" id="admin-content"><div class="empty-state"><p>Loading...</p></div></div>`;
+  try {
+    const syncButton = `<button id="sync-drive" class="btn btn-primary btn-sm">Sync Google Drive</button>`;
+    let users = [];
+    if (user.role === 'admin') users = await API.get('/admin/users?skip=0&limit=200');
+    const userRows = users.map(u => `
+      <div class="card" style="margin-bottom:8px;">
+        <strong>${escHtml(u.display_name)}</strong> · ${escHtml(u.role)}
+        <div style="color:var(--color-muted);font-size:.85rem;">${escHtml(u.email)} · ${u.is_active ? 'Active' : 'Inactive'}</div>
+      </div>`).join('');
+    app.querySelector('#admin-content').innerHTML = `<div class="page">
+      <h1 class="page-title">Admin</h1>
+      <div class="card"><p>Synchronize the video library from Google Drive.</p>${syncButton}<p id="sync-result"></p></div>
+      ${user.role === 'admin' ? `<h2 class="section-title">USERS</h2>${userRows || '<div class="empty-state"><p>No users found.</p></div>'}` : ''}
+    </div>`;
+    app.querySelector('#sync-drive').addEventListener('click', async e => {
+      e.target.disabled = true;
+      try {
+        const result = await API.post('/admin/sync/google-drive');
+        app.querySelector('#sync-result').textContent = result.success
+          ? `Added ${result.added}, updated ${result.updated}, deactivated ${result.deactivated}.`
+          : (result.error || 'Sync failed.');
+      } catch (err) {
+        app.querySelector('#sync-result').textContent = err.message;
+      } finally {
+        e.target.disabled = false;
+      }
+    });
+  } catch (e) {
+    app.querySelector('#admin-content').innerHTML = `<div class="empty-state"><p>${escHtml(e.message)}</p></div>`;
+  }
 }

@@ -116,6 +116,20 @@ def test_cron_sync_does_not_accept_user_id_in_body(client):
     assert resp.status_code == 200
 
 
+def test_cron_sync_returns_500_for_unexpected_failure(client):
+    """Unexpected sync failures must be visible to Vercel monitoring."""
+    from unittest.mock import patch
+
+    with patch("app.routes.admin.sync_drive", side_effect=RuntimeError("drive outage")):
+        resp = client.post(
+            "/api/v1/admin/sync/google-drive-cron",
+            headers={"x-vercel-cron": "test-secret"},
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Google Drive sync failed unexpectedly."
+
+
 # ── Manual admin sync tests (retained) ─────────────────────────────────
 
 

@@ -1,5 +1,5 @@
 """Video routes — list, detail, stream, share, posted."""
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -35,7 +35,7 @@ def get_video_by_id(video_id: int, db: Session = Depends(get_db)):
 @router.get("/{video_id}/stream")
 def stream(
     video_id: int,
-    range: str | None = None,
+    range_header: str | None = Header(default=None, alias="Range"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -43,7 +43,7 @@ def stream(
     Proxy the MP4 from Google Drive to the browser.
     Supports HTTP Range requests for seek support.
     """
-    return stream_video(db, video_id, range_header=range)
+    return stream_video(db, video_id, range_header=range_header)
 
 
 @router.post("/{video_id}/share", response_model=PostHistoryResponse, status_code=status.HTTP_201_CREATED)

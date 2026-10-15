@@ -54,13 +54,11 @@ def trigger_sync_cron(
         result["_cron_triggered"] = True
         result["_cron_timestamp"] = int(time.time())
         return result
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "_cron_triggered": True,
-            "_cron_timestamp": int(time.time()),
-        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google Drive sync failed unexpectedly.",
+        ) from exc
 
 
 # ── Manual Admin Sync ──────────────────────────────────────────────────
