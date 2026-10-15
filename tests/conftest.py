@@ -1,10 +1,19 @@
 """
 Shared pytest fixtures for QuranFlow tests.
 """
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["SECRET_KEY"] = "test-secret-key-for-pytest-only"
+os.environ["APP_ENV"] = "test"
+os.environ["GOOGLE_SERVICE_ACCOUNT"] = "{}"
+os.environ["GOOGLE_DRIVE_ROOT_FOLDER_ID"] = ""
+os.environ["VERCEL_CRON_SECRET"] = "test-secret"
 
 from app.main import app
 from app.database import Base, get_db
