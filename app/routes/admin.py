@@ -18,11 +18,14 @@ _admin_only = require_role("admin")
 _curator_or_admin = require_role("curator", "admin")
 
 
-# ── Vercel Cron Endpoint ────────────────────────────────────────────────
-# This endpoint is triggered by Vercel Cron Jobs every 15 minutes.
+# ── Vercel Cron / Scheduler Endpoint ────────────────────────────────────
+# Triggered by an external scheduler (GitHub Actions workflow) every 15
+# minutes, and optionally by Vercel Cron on paid plans.
 # It uses a secret-based authentication mechanism:
-# - Vercel adds a `x-vercel-cron` header to cron-triggered requests
-# - The secret is configured in Vercel environment variables
+# - The scheduler sends the secret in an `Authorization: Bearer <secret>`
+#   header (Vercel-native style) or an `x-vercel-cron` header.
+# - The secret is configured via the CRON_SECRET (preferred) or
+#   VERCEL_CRON_SECRET environment variable.
 # - The endpoint does NOT require a QuranFlow user session
 # - It reuses the existing sync_drive() service
 # - Manual admin sync (for debugging/recovery) is retained separately
@@ -30,21 +33,33 @@ _curator_or_admin = require_role("curator", "admin")
 import os
 
 
+def _expected_cron_secret() -> str:
+    """Read the cron secret at request time so it can be rotated/tested."""
+    return os.getenv("CRON_SECRET") or os.getenv("VERCEL_CRON_SECRET", "")
+
+
+@router.get("/sync/google-drive-cron", include_in_schema=False)
 @router.post("/sync/google-drive-cron")
 def trigger_sync_cron(
     x_vercel_cron: str = Header(None),
+    authorization: str = Header(None),
     db: Session = Depends(get_db),
 ):
-    """Vercel Cron-triggered Google Drive sync.
+    """Scheduler-triggered Google Drive sync.
 
-    Triggers sync_drive() when invoked by Vercel Cron Jobs.
-    Authentication: Vercel adds x-vercel-cron header to scheduled requests.
+    Triggers sync_drive() when invoked by an external scheduler or Vercel Cron.
+    Authentication: a shared secret sent as `Authorization: Bearer <secret>`
+    or `x-vercel-cron: <secret>`, compared against CRON_SECRET
+    (or VERCEL_CRON_SECRET for backwards compatibility).
     No QuranFlow user session required. Idempotent: repeated runs preserve existing state.
     Returns: sync summary dict.
     """
     # Verify cron secret against environment variable (read at request time for testability)
-    expected_secret = os.getenv("VERCEL_CRON_SECRET", "")
-    if not expected_secret or x_vercel_cron != expected_secret:
+    expected_secret = _expected_cron_secret()
+    provided_secret = x_vercel_cron or ""
+    if authorization and authorization.startswith("Bearer "):
+        provided_secret = authorization[len("Bearer "):]
+    if not expected_secret or provided_secret != expected_secret:
         raise HTTPException(status_code=403, detail="Invalid cron secret")
 
     # Run the sync (no user auth required)

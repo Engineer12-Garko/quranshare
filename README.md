@@ -26,7 +26,7 @@ copy .env.example .env       # Windows
 # cp .env.example .env       # macOS/Linux
 # Edit .env — set DATABASE_URL and SECRET_KEY at minimum.
 # Production additionally requires GOOGLE_SERVICE_ACCOUNT,
-# GOOGLE_DRIVE_ROOT_FOLDER_ID, VERCEL_CRON_SECRET, and COOKIE_SECURE=true.
+# GOOGLE_DRIVE_ROOT_FOLDER_ID, and COOKIE_SECURE=true.
 
 # 4. Run database migrations
 alembic upgrade head
@@ -74,5 +74,31 @@ quranflow/
 See `.env.example` for all required and optional variables.
 **Never commit `.env` to version control.**
 
-For production, the application refuses to start if Google Drive, cron
-authentication, or secure-cookie settings are incomplete.
+For production, the application refuses to start if Google Drive or
+secure-cookie settings are incomplete. The scheduled-sync secret
+(`CRON_SECRET`) is optional at boot — when unset, the sync endpoint
+simply returns `403` and the rest of the app keeps working.
+
+## Scheduled Drive Sync
+
+The Google Drive → catalog sync runs every 15 minutes via the GitHub
+Actions workflow at `.github/workflows/drive-sync.yml`, which calls
+`POST /api/v1/admin/sync/google-drive-cron`.
+
+> Vercel Cron on the **Hobby** plan only supports **once-per-day**
+> schedules, and a more frequent expression fails the entire deployment.
+> That is why the schedule lives in GitHub Actions instead.
+
+Set up (once):
+
+1. Generate a secret:
+   `python -c "import secrets; print(secrets.token_hex(32))"`
+2. Add it to **Vercel** → Project → Settings → Environment Variables as
+   `CRON_SECRET` (Production and Preview).
+3. Add the **same** value to **GitHub** → Repo → Settings → Secrets and
+   variables → Actions as a secret named `CRON_SECRET`.
+4. Optional: add a repository **variable** `SYNC_URL` to override the
+   default endpoint (`https://quranshare-eta.vercel.app/api/v1/admin/sync/google-drive-cron`).
+
+Curators/admins can still run a manual sync via
+`POST /api/v1/admin/sync/google-drive`.

@@ -43,8 +43,6 @@ class Settings(BaseSettings):
     def production_settings_must_be_safe(self) -> "Settings":
         if self.app_env == "production":
             missing = []
-            if not self.vercel_cron_secret:
-                missing.append("VERCEL_CRON_SECRET")
             if not self.google_service_account or self.google_service_account == "{}":
                 missing.append("GOOGLE_SERVICE_ACCOUNT")
             if not self.google_drive_root_folder_id:

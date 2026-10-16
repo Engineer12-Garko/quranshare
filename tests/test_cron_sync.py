@@ -130,6 +130,48 @@ def test_cron_sync_returns_500_for_unexpected_failure(client):
     assert resp.json()["detail"] == "Google Drive sync failed unexpectedly."
 
 
+def test_cron_sync_accepts_authorization_bearer(client, db):
+    """Scheduler can authenticate with an Authorization: Bearer header."""
+    resp = client.post(
+        "/api/v1/admin/sync/google-drive-cron",
+        headers={"Authorization": "Bearer test-secret"},
+    )
+    assert resp.status_code == 200
+
+
+def test_cron_sync_rejects_wrong_authorization_bearer(client):
+    """A wrong bearer token must be rejected."""
+    resp = client.post(
+        "/api/v1/admin/sync/google-drive-cron",
+        headers={"Authorization": "Bearer wrong-secret"},
+    )
+    assert resp.status_code == 403
+
+
+def test_cron_sync_accepts_get(client, db):
+    """GET is accepted (Vercel Cron and simple schedulers use GET)."""
+    resp = client.get(
+        "/api/v1/admin/sync/google-drive-cron",
+        headers={"x-vercel-cron": "test-secret"},
+    )
+    assert resp.status_code == 200
+
+
+def test_cron_sync_prefers_cron_secret_env(client, db, monkeypatch):
+    """CRON_SECRET takes precedence over the legacy VERCEL_CRON_SECRET name."""
+    monkeypatch.setenv("CRON_SECRET", "primary-secret")
+    ok = client.post(
+        "/api/v1/admin/sync/google-drive-cron",
+        headers={"Authorization": "Bearer primary-secret"},
+    )
+    assert ok.status_code == 200
+    legacy = client.post(
+        "/api/v1/admin/sync/google-drive-cron",
+        headers={"x-vercel-cron": "test-secret"},
+    )
+    assert legacy.status_code == 403
+
+
 # ── Manual admin sync tests (retained) ─────────────────────────────────
 
 
