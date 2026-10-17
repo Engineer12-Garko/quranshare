@@ -365,6 +365,18 @@ function fmtDuration(secs) {
   return `${m}:${String(s).padStart(2,'0')}`;
 }
 
+function videoThumbnailUrl(video) {
+  const fileId = video?.drive_file_id;
+  return fileId ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w640` : '';
+}
+
+function videoThumbnailMarkup(video, className = 'video-thumbnail') {
+  const url = videoThumbnailUrl(video);
+  return url
+    ? `<img class="${className}" src="${url}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+    : '';
+}
+
 /* ── Navigation ────────────────────────────────────────────────────────── */
 function navHtml(active) {
   const items = [
@@ -476,7 +488,7 @@ async function loadVerseOfDay() {
 async function renderHome(app) {
   const user = await getUser();
   if (!user) { navigate('/'); return; }
-  app.innerHTML = `${navHtml('#/home')}<div class="page" id="home-content"><div class="empty-state"><p>Loading...</p></div></div>`;
+  app.innerHTML = `${navHtml('#/home')}<div class="page home-page" id="home-content"><div class="empty-state"><p>Loading...</p></div></div>`;
 
   try {
     const [video, verse] = await Promise.all([
@@ -492,7 +504,10 @@ async function renderHome(app) {
       <p class="greeting-sub">Take a moment to reflect.</p>
       <div class="section-title">TODAY'S REMINDER</div>
       <div class="reminder-card">
-        <video class="reminder-video" src="/api/v1/videos/${video.id}/stream" controls preload="metadata"></video>
+      <button class="reminder-preview" type="button" onclick="watchVideo(${video.id})" aria-label="Watch ${escHtml(video.title)}">
+        ${videoThumbnailMarkup(video, 'reminder-thumbnail')}
+        <span class="reminder-play material-symbols-outlined" aria-hidden="true">play_arrow</span>
+      </button>
         <div class="reminder-body">
           <div class="reminder-title">${escHtml(video.title)}</div>
           ${video.description ? `<p class="reminder-desc">${escHtml(video.description)}</p>` : ''}
@@ -600,7 +615,7 @@ async function renderQuran(app) {
     });
   } catch (error) {
     if (generation !== _quranRequestGeneration || !content.isConnected) return;
-    content.insertAdjacentHTML('beforeend', `<div class="empty-state"><p>${escHtml(error.message || 'Qur’an content is temporarily unavailable.')}</p><p>Prelive provides only Al-Fatihah and Al-Baqarah. Configure the Production environment for the complete Qur'an.</p></div>`);
+    content.innerHTML = `<div class="page-header"><span class="brand">TADABBUR</span></div><h1 class="page-title">Qur'an</h1><p class="page-subtitle">Read and reflect on the Qur'an.</p><div class="empty-state quran-error" role="alert"><p>${escHtml(error.message || 'Qur’an content is temporarily unavailable.')}</p><p class="quran-info">Prelive provides only Al-Fatihah and Al-Baqarah. Configure the Production environment for the complete Qur'an.</p><button class="btn btn-outline btn-sm" type="button" onclick="_quranChapters = null; renderQuran(document.getElementById('app'))">Try again</button></div>`;
   }
 }
 
@@ -650,6 +665,7 @@ async function renderVideos(app) {
       const cards = items.map(v => `
         <div class="video-card">
           <div class="video-thumb">
+            ${videoThumbnailMarkup(v)}
             <button class="play-icon material-symbols-outlined" onclick="watchVideo(${v.id})" type="button" aria-label="Watch ${escHtml(v.title)}">play_arrow</button>
           </div>
           <div class="video-info">
@@ -872,6 +888,7 @@ async function renderSaved(app) {
     const videoCards = videoItems.map(s => `
       <div class="saved-video-card">
         <div class="saved-thumb">
+          ${videoThumbnailMarkup(s, 'video-thumbnail')}
           <div class="play-overlay material-symbols-outlined">play_arrow</div>
         </div>
         <div class="saved-info">
@@ -1055,6 +1072,8 @@ function watchVideo(videoId) {
 
   API.get(`/videos/${videoId}`).then(v => {
     const info = document.getElementById('modal-video-info');
+    const player = document.getElementById('modal-video');
+    if (player && videoThumbnailUrl(v)) player.poster = videoThumbnailUrl(v);
     if (info) {
       info.innerHTML = `
         <div style="font-weight:800;font-size:1.1rem;margin-bottom:4px;">${escHtml(v.title)}</div>
