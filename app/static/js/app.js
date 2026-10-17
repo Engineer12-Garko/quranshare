@@ -555,6 +555,7 @@ function quranVerseCard(verse) {
     <div class="verse-arabic" dir="rtl" lang="ar" translate="no">${escHtml(verse.arabic)}</div>
     <p class="verse-translation">${escHtml(verse.translation)}</p>
     ${verse.translation_source ? `<div class="verse-attribution">${escHtml(verse.translation_source)}</div>` : ''}
+    ${verse.audio_url ? `<audio class="quran-audio" controls preload="none" src="${escHtml(verse.audio_url)}" aria-label="Play recitation for ${escHtml(id)}"></audio>` : ''}
     <button class="btn btn-outline btn-sm" type="button" onclick="copyQuranVerse('${escHtml(id)}', this)">Copy verse</button>
   </article>`;
 }
@@ -587,7 +588,7 @@ async function renderQuran(app) {
   app.innerHTML = `${navHtml('#/quran')}<main class="page" id="quran-content"><div class="page-header"><span class="brand">TADABBUR</span></div><h1 class="page-title">Qur'an</h1><p class="page-subtitle">Read and reflect on the Qur'an.</p><div class="empty-state"><p>Loading chapters…</p></div></main>`;
   const content = app.querySelector('#quran-content');
   try {
-    _quranChapters = _quranChapters || await API.get('/content/chapters', 3600);
+    _quranChapters = _quranChapters || await API.get('/content/quran/surahs', 3600);
     if (generation !== _quranRequestGeneration || !content.isConnected) return;
     if (!_quranChapters.some(chapter => chapter.id === chapterId)) chapterId = _quranChapters[0]?.id || 1;
     content.innerHTML = `<div class="page-header"><span class="brand">TADABBUR</span></div><h1 class="page-title">Qur'an</h1><p class="page-subtitle">Read and reflect on the Qur'an.</p>
@@ -596,26 +597,15 @@ async function renderQuran(app) {
     const select = content.querySelector('#quran-chapter');
     select.addEventListener('change', () => navigate(`/quran?chapter=${select.value}`));
     const chapter = _quranChapters.find(c => c.id === chapterId);
-    const initialPage = targetVerse ? Math.floor((targetVerse - 1) / 50) + 1 : 1;
-    const data = await API.get(`/content/chapters/${chapterId}/verses?page=${initialPage}&per_page=50`, 3600);
+    const data = await API.get(`/content/quran/surahs/${chapterId}`, 3600);
     if (generation !== _quranRequestGeneration || !content.isConnected) return;
     const section = content.querySelector('#quran-verses');
-    section.innerHTML = `<header class="quran-chapter-heading"><div class="quran-chapter-arabic" dir="rtl" lang="ar" translate="no">${escHtml(chapter.name_arabic)}</div><h2>${escHtml(chapter.name_simple)}</h2><p>${escHtml(chapter.translated_name || '')} · ${chapter.verses_count} verses</p></header><div class="quran-verse-list">${data.verses.map(quranVerseCard).join('')}</div>${data.pagination.next_page ? '<button id="quran-load-more" class="btn btn-outline btn-block" type="button">Load more verses</button>' : ''}`;
+    section.innerHTML = `<header class="quran-chapter-heading"><div class="quran-chapter-arabic" dir="rtl" lang="ar" translate="no">${escHtml(chapter.name_arabic)}</div><h2>${escHtml(chapter.name_simple)}</h2><p>${escHtml(chapter.translated_name || '')} · ${chapter.verses_count} verses</p><p class="verse-attribution">Translation: ${escHtml(data.translation_edition)} · Source: AlQuran Cloud</p></header><div class="quran-verse-list">${data.verses.map(quranVerseCard).join('')}</div>`;
     const verseTarget = targetVerse && document.getElementById(`verse-${chapterId}-${targetVerse}`);
     verseTarget?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const more = section.querySelector('#quran-load-more');
-    if (more) more.addEventListener('click', async () => {
-      more.disabled = true; more.textContent = 'Loading…';
-      try {
-        const next = await API.get(`/content/chapters/${chapterId}/verses?page=${data.pagination.next_page}&per_page=50`, 3600);
-        section.querySelector('.quran-verse-list').insertAdjacentHTML('beforeend', next.verses.map(quranVerseCard).join(''));
-        if (!next.pagination.next_page) more.remove();
-        else { more.disabled = false; more.textContent = 'Load more verses'; }
-      } catch { more.disabled = false; more.textContent = 'Retry loading verses'; }
-    });
   } catch (error) {
     if (generation !== _quranRequestGeneration || !content.isConnected) return;
-    content.innerHTML = `<div class="page-header"><span class="brand">TADABBUR</span></div><h1 class="page-title">Qur'an</h1><p class="page-subtitle">Read and reflect on the Qur'an.</p><div class="empty-state quran-error" role="alert"><p>${escHtml(error.message || 'Qur’an content is temporarily unavailable.')}</p><p class="quran-info">Prelive provides only Al-Fatihah and Al-Baqarah. Configure the Production environment for the complete Qur'an.</p><button class="btn btn-outline btn-sm" type="button" onclick="_quranChapters = null; renderQuran(document.getElementById('app'))">Try again</button></div>`;
+    content.innerHTML = `<div class="page-header"><span class="brand">TADABBUR</span></div><h1 class="page-title">Qur'an</h1><p class="page-subtitle">Read and reflect on the Qur'an.</p><div class="empty-state quran-error" role="alert"><p>${escHtml(error.message || 'Qur’an content is temporarily unavailable.')}</p><p class="quran-info">Live content is provided by AlQuran Cloud. Please retry if the provider is temporarily unavailable.</p><button class="btn btn-outline btn-sm" type="button" onclick="_quranChapters = null; renderQuran(document.getElementById('app'))">Try again</button></div>`;
   }
 }
 
@@ -757,15 +747,39 @@ function setVideoCategory(cat, categoryId) {
 /* ── Du'as Screen ──────────────────────────────────────────────────────── */
 let _duaCategory = 'All';
 let _duaSearch = '';
+let _liveDuaItems = null;
 
 async function renderDuas(app) {
   const user = await getUser();
   if (!user) { navigate('/'); return; }
   app.innerHTML = `${navHtml('#/duas')}<div class="page" id="duas-content"><div class="empty-state"><p>Loading...</p></div></div>`;
 
-  const categories = ['All', 'Morning', 'Evening', 'Sleep', 'More'];
+  let liveDuas;
+  try {
+    const queryParts = [];
+    if (_duaSearch) queryParts.push(`search=${encodeURIComponent(_duaSearch)}`);
+    if (_duaCategory !== 'All' && _duaCategory !== 'More') queryParts.push(`category=${encodeURIComponent(_duaCategory)}`);
+    const summaries = await API.get(`/duas${queryParts.length ? `?${queryParts.join('&')}` : ''}`, 900);
+    if (!Array.isArray(summaries)) throw new Error('The live Du\'a response was invalid.');
+    liveDuas = summaries.map(item => ({ ...item, icon: '📖' }));
+    _liveDuaItems = liveDuas;
+    if (liveDuas[0]) {
+      try {
+        Object.assign(liveDuas[0], await API.get(`/duas/${encodeURIComponent(liveDuas[0].id)}`, 3600));
+      } catch (error) {
+        console.error('Unable to load the daily live Du\'a', error);
+      }
+    }
+  } catch (error) {
+    console.error('Unable to load live Du\'as', error);
+    liveDuas = DUAS;
+    _liveDuaItems = null;
+  }
 
-  const duaOfDay = todayDua();
+  const categories = _liveDuaItems
+    ? ['All', ...[...new Set(liveDuas.map(d => d.category).filter(Boolean))].slice(0, 5)]
+    : ['All', 'Morning', 'Evening', 'Sleep', 'More'];
+  const duaOfDay = liveDuas[0] || todayDua();
 
   function pillHtml() {
     return `<div class="pill-row-inner">` + categories.map((c, i) =>
@@ -778,10 +792,10 @@ async function renderDuas(app) {
     const el = app.querySelector('#duas-content');
     if (!el) return;
 
-    const query = _duaSearch.toLocaleLowerCase();
-    const filtered = DUAS.filter(d => {
-      if (['Morning', 'Evening', 'Sleep'].includes(_duaCategory) && d.category !== _duaCategory) return false;
-      if (_duaCategory === 'More' && ['Morning', 'Evening', 'Sleep'].includes(d.category)) return false;
+    const query = _liveDuaItems ? '' : _duaSearch.toLocaleLowerCase();
+    const filtered = liveDuas.filter(d => {
+      if (!_liveDuaItems && ['Morning', 'Evening', 'Sleep'].includes(_duaCategory) && d.category !== _duaCategory) return false;
+      if (!_liveDuaItems && _duaCategory === 'More' && ['Morning', 'Evening', 'Sleep'].includes(d.category)) return false;
       if (!query) return true;
       return [d.title, d.category, d.translation, d.transliteration]
         .filter(Boolean)
@@ -803,7 +817,8 @@ async function renderDuas(app) {
       <div class="section-title">DU'A OF THE DAY</div>
       <div class="dua-card">
         <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(duaOfDay.arabic)}</div>
-        <div class="dua-translation">${escHtml(duaOfDay.translation)}</div>
+        <div class="dua-translation">${escHtml(duaOfDay.translation || 'Open the entry to read its translation.')}</div>
+        ${duaOfDay.source ? `<div class="dua-source">${escHtml(duaOfDay.source)}</div>` : ''}
         <div class="dua-actions">
           <button class="btn btn-primary btn-sm" type="button" onclick="openDuaDetails('${escHtml(duaOfDay.id)}')">Read Du'a →</button>
           <button class="btn btn-outline btn-sm" type="button" onclick="toggleDuaSaved('${escHtml(duaOfDay.id)}')">${isSaved('dua', duaOfDay.id) ? '🔖 Saved' : '🔖 Save'}</button>
@@ -828,26 +843,31 @@ async function renderDuas(app) {
     let searchTimer;
     searchInput.addEventListener('input', e => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { _duaSearch = e.target.value.trim(); renderList(); }, 350);
+      searchTimer = setTimeout(() => { _duaSearch = e.target.value.trim(); renderDuas(app); }, 350);
     });
   }
 
   renderList();
 }
 
-function setDuaCategory(cat) { _duaCategory = cat; _duaSearch = ''; renderDuas(document.getElementById('app')); }
+function setDuaCategory(cat) { _duaCategory = cat; _duaSearch = ''; return renderDuas(document.getElementById('app')); }
 
 function toggleDuaSaved(duaId) {
-  const dua = DUAS.find(item => item.id === duaId);
+  const dua = _liveDuaItems?.find(item => item.id === duaId) || DUAS.find(item => item.id === duaId);
   if (!dua) return;
   toggleSaved('dua', dua.id, dua.title);
   if (window.location.hash === '#/saved') renderSaved(document.getElementById('app'));
   else renderDuas(document.getElementById('app'));
 }
 
-function openDuaDetails(duaId) {
-  const dua = DUAS.find(item => item.id === duaId);
+async function openDuaDetails(duaId) {
+  let dua = _liveDuaItems?.find(item => item.id === duaId) || DUAS.find(item => item.id === duaId);
   if (!dua) return;
+  const staticBody = !_liveDuaItems ? `
+      <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(dua.arabic)}</div>
+      <p class="dua-translation">${escHtml(dua.translation)}</p>
+      ${dua.transliteration ? `<p class="dua-transliteration">${escHtml(dua.transliteration)}</p>` : ''}
+      ${dua.source ? `<p class="dua-source">${escHtml(dua.source)}</p>` : '<p class="dua-source">Source details are not available for this entry.</p>'}` : '<div class="empty-state"><p>Loading Du\'a…</p></div>';
   document.getElementById('dua-details-modal')?.remove();
   const modal = document.createElement('div');
   modal.id = 'dua-details-modal';
@@ -857,15 +877,27 @@ function openDuaDetails(duaId) {
       <button class="dua-details-close" type="button" aria-label="Close" onclick="document.getElementById('dua-details-modal').remove()">×</button>
       <div class="dua-list-sub">${escHtml(dua.category)}</div>
       <h2 id="dua-details-title" class="dua-list-title">${escHtml(dua.title)}</h2>
-      <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(dua.arabic)}</div>
-      <p class="dua-translation">${escHtml(dua.translation)}</p>
-      ${dua.transliteration ? `<p class="dua-transliteration">${escHtml(dua.transliteration)}</p>` : ''}
-      ${dua.source ? `<p class="dua-source">${escHtml(dua.source)}</p>` : '<p class="dua-source">Source details are not available for this entry.</p>'}
+      <div id="dua-detail-body">${staticBody}</div>
       <button class="btn btn-outline btn-sm" type="button" onclick="toggleDuaSaved('${escHtml(dua.id)}'); openDuaDetails('${escHtml(dua.id)}')">${isSaved('dua', dua.id) ? '🔖 Unsave' : '🔖 Save Du\'a'}</button>
     </section>`;
   document.body.appendChild(modal);
   modal.addEventListener('click', event => { if (event.target === modal) modal.remove(); });
   modal.addEventListener('keydown', event => { if (event.key === 'Escape') modal.remove(); });
+  if (!_liveDuaItems) return;
+  try {
+    const detail = await API.get(`/duas/${encodeURIComponent(duaId)}`, 3600);
+    if (!modal.isConnected) return;
+    modal.querySelector('#dua-detail-body').innerHTML = `
+      <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(detail.arabic)}</div>
+      <p class="dua-translation">${escHtml(detail.translation)}</p>
+      ${detail.transliteration ? `<p class="dua-transliteration">${escHtml(detail.transliteration)}</p>` : ''}
+      ${detail.references?.length ? `<p class="dua-source">Reference: ${escHtml(detail.references.map(reference => typeof reference === 'string' ? reference : JSON.stringify(reference)).join('; '))}</p>` : ''}
+      <p class="dua-source">Source: <a href="${escHtml(detail.source_url)}" target="_blank" rel="noopener">${escHtml(detail.source)}</a>${detail.source_reference ? ` · ${escHtml(detail.source_reference)}` : ''}</p>
+      ${detail.audio_url ? `<audio controls preload="none" src="${escHtml(detail.audio_url)}" aria-label="Play Du'a recitation"></audio>` : ''}`;
+  } catch (error) {
+    const body = modal.querySelector('#dua-detail-body');
+    if (body) body.innerHTML = `<div class="empty-state" role="alert"><p>${escHtml(error.message || 'Unable to load this Du\'a.')}</p><button class="btn btn-outline btn-sm" type="button" onclick="openDuaDetails('${escHtml(duaId)}')">Try again</button></div>`;
+  }
 }
 
 /* ── Saved Screen ──────────────────────────────────────────────────────── */
@@ -878,7 +910,7 @@ async function renderSaved(app) {
   const videoItems = saved.filter(s => s.type === 'video');
   const duaItems = saved.filter(s => s.type === 'dua');
   const verseItems = saved.filter(s => s.type === 'verse');
-  const duaMap = Object.fromEntries(DUAS.map(d => [d.id, d]));
+  const duaMap = Object.fromEntries([...DUAS, ...(_liveDuaItems || [])].map(d => [d.id, d]));
   const legacyImportAvailable = getLegacySaved().length > 0 && !localStorage.getItem(`${savedStorageKey()}_legacy_imported`);
 
   function renderList() {

@@ -44,3 +44,13 @@ class ChapterVersesResponse(BaseModel):
 
 class VerseOfDayResponse(VerseResponse):
     date: str
+
+
+class LiveVerseResponse(VerseResponse):
+    audio_url: str | None = None
+
+
+class LiveChapterVersesResponse(BaseModel):
+    chapter: ChapterResponse
+    verses: list[LiveVerseResponse]
+    translation_edition: str
