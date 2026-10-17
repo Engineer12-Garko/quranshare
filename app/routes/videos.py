@@ -37,10 +37,10 @@ def stream(
     video_id: int,
     range_header: str | None = Header(default=None, alias="Range"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """
-    Proxy the MP4 from Google Drive to the browser.
+    Proxy the MP4 from Google Drive to the browser. Active catalog videos
+    are intentionally public so shared stream URLs work for recipients.
     Supports HTTP Range requests for seek support.
     """
     return stream_video(db, video_id, range_header=range_header)

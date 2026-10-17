@@ -155,22 +155,35 @@ def get_drive_service() -> GoogleDriveService:
 # ── streaming helpers ──────────────────────────────────────────────────────────
 
 def _parse_range(range_header: str, file_size: int) -> tuple[int, int]:
-    """Parse 'bytes=start-end' header. Returns (start, end) clamped to file size."""
+    """Parse one RFC 7233 byte range, including open-ended and suffix ranges."""
     try:
-        unit, ranges = range_header.split("=")
+        unit, ranges = range_header.strip().split("=", 1)
+        if unit.strip().lower() != "bytes" or "," in ranges:
+            raise ValueError
         start_str, end_str = ranges.split("-")
-        start = int(start_str)
-        end = int(end_str) if end_str else file_size - 1
+        if file_size <= 0:
+            raise ValueError
+        if not start_str:
+            suffix_length = int(end_str)
+            if suffix_length <= 0:
+                raise ValueError
+            start = max(file_size - suffix_length, 0)
+            end = file_size - 1
+        else:
+            start = int(start_str)
+            end = int(end_str) if end_str else file_size - 1
     except (ValueError, AttributeError):
         raise HTTPException(
             status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
             detail="Invalid Range header.",
+            headers={"Content-Range": f"bytes */{file_size}"},
         )
     end = min(end, file_size - 1)
-    if start > end or start < 0:
+    if start > end or start < 0 or start >= file_size:
         raise HTTPException(
             status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
             detail="Unsatisfiable range.",
+            headers={"Content-Range": f"bytes */{file_size}"},
         )
     return start, end
 
@@ -206,9 +219,13 @@ def _download_range(svc, file_id: str, start: int, end: int, chunk_size: int) ->
         # http.request handles auth automatically since it's an AuthorizedHttp object
         resp, content = http.request(uri, headers=headers)
         
-        if resp.status not in (200, 206) or not content:
+        # A 200 response means Drive ignored the Range header. Sending that
+        # body would corrupt the browser's partial-content response.
+        if resp.status != 206 or not content:
             break
-            
+
+        expected_length = current_end - current_start + 1
+        if len(content) > expected_length:
+            content = content[:expected_length]
         yield content
-        # Advance by the exact number of bytes received in case the server chunked it differently
         current_start += len(content)

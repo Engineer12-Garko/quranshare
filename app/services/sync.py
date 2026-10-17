@@ -66,7 +66,6 @@ def sync_drive(db: Session) -> dict:
         except Exception as exc:
             errors.append(f"Failed to list subfolders for {current_folder}: {exc}")
             failed += 1
-            continue
             
         # 2. Fetch MP4s in current folder
         try:
@@ -106,18 +105,19 @@ def sync_drive(db: Session) -> dict:
                 errors.append(f"File '{drive_id}': {exc}")
                 failed += 1
 
-    # Deactivate videos whose Drive file is gone (O(n) scan)
-
-    # Deactivate videos whose Drive file is gone (O(n) scan)
-    for drive_id, video in existing.items():
-        if drive_id not in seen_drive_ids and video.is_active:
-            video.is_active = False
-            deactivated += 1
+    # Only a complete scan can establish that a file disappeared. If any
+    # folder failed to list, keep the existing catalog active rather than
+    # treating unseen files in that subtree as deleted.
+    if not errors:
+        for drive_id, video in existing.items():
+            if drive_id not in seen_drive_ids and video.is_active:
+                video.is_active = False
+                deactivated += 1
 
     db.commit()
 
     return {
-        "success": True,
+        "success": not errors,
         "added": added,
         "updated": updated,
         "deactivated": deactivated,

@@ -654,12 +654,18 @@ async function shareVideoFile(videoId, title) {
       window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
     }
     await API.post(`/videos/${videoId}/share`);
+    if (window.confirm('Did you post this reminder to WhatsApp?')) {
+      await API.post(`/videos/${videoId}/posted`);
+    }
     return true;
   } catch (e) {
     if (e.name === 'AbortError') return false;
     if (!cachedBlob && e.name === 'NotAllowedError') {
       window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
       await API.post(`/videos/${videoId}/share`);
+      if (window.confirm('Did you post this reminder to WhatsApp?')) {
+        await API.post(`/videos/${videoId}/posted`);
+      }
       return true;
     }
     console.error('Unable to share video', e);

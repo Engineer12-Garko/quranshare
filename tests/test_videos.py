@@ -123,3 +123,10 @@ def test_video_stream_forwards_http_range_header(client, db):
     assert response.status_code == 200
     stream_video.assert_called_once()
     assert stream_video.call_args.kwargs["range_header"] == "bytes=0-99"
+
+
+def test_video_stream_url_is_accessible_without_sender_session(client, db):
+    video = _seed_video(db, "Public shared video", drive_file_id="shared-stream")
+    with patch("app.routes.videos.stream_video", return_value={"ok": True}):
+        response = client.get(f"/api/v1/videos/{video.id}/stream")
+    assert response.status_code == 200
