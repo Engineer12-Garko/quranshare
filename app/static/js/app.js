@@ -492,8 +492,11 @@ async function loadDailyDua() {
 
 async function loadVideoRecommendations() {
   try {
-    const recommendations = await API.get('/videos/recommendations?limit=3', 86400);
-    return Array.isArray(recommendations) ? recommendations : [];
+    // Drive sync runs more frequently than the daily recommendation rotation.
+    // Keep the stable ordering server-side, but refresh the catalog promptly.
+    const recommendations = await API.get('/videos/recommendations?limit=3', 60);
+    if (!Array.isArray(recommendations)) throw new Error('The recommendation response was invalid.');
+    return recommendations;
   } catch (error) {
     console.warn('Daily recommendations unavailable; using the existing reminder route', error);
     return [await API.get('/reminders/today', 60)];
@@ -1194,7 +1197,7 @@ function watchVideo(videoId) {
   modal.innerHTML = `
     <div style="background:var(--color-card);border-radius:20px;max-width:480px;width:100%;overflow:hidden;position:relative;">
       <button onclick="document.getElementById('video-modal').remove()" style="position:absolute;top:12px;right:12px;z-index:10;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:1.2rem;cursor:pointer;">✕</button>
-      <video id="modal-video" controls autoplay playsinline preload="metadata" style="width:100%;max-height:70vh;background:#000;" src="/api/v1/videos/${videoId}/stream"></video>
+      <video id="modal-video" controls autoplay playsinline preload="metadata" style="width:100%;max-height:70vh;background:#000;" src="/api/v1/videos/${encodeURIComponent(videoId)}/stream"></video>
       <div id="modal-video-info" style="padding:16px;"><div style="color:var(--color-muted);">Loading video...</div></div>
     </div>`;
   document.body.appendChild(modal);
@@ -1203,12 +1206,19 @@ function watchVideo(videoId) {
   const player = modal.querySelector('#modal-video');
   player.addEventListener('error', () => {
     const info = modal.querySelector('#modal-video-info');
-    if (info) info.innerHTML = '<div style="color:#a33;">Unable to load this video. Please try again later.</div>';
-  }, { once: true });
+    if (info) {
+      info.innerHTML = '<div style="color:#a33;">Unable to load this video. Please try again.</div><button class="btn btn-outline btn-sm" type="button" id="retry-modal-video">Retry</button>';
+      info.querySelector('#retry-modal-video')?.addEventListener('click', () => {
+        player.src = `/api/v1/videos/${encodeURIComponent(videoId)}/stream?retry=${Date.now()}`;
+        player.load();
+        player.play().catch(() => {});
+      });
+    }
+  });
 
-  API.get(`/videos/${videoId}`).then(v => {
-    const info = document.getElementById('modal-video-info');
-    const player = document.getElementById('modal-video');
+  API.get(`/videos/${encodeURIComponent(videoId)}`).then(v => {
+    if (!modal.isConnected) return;
+    const info = modal.querySelector('#modal-video-info');
     if (player && videoThumbnailUrl(v)) player.poster = videoThumbnailUrl(v);
     if (info) {
       info.innerHTML = `
@@ -1218,7 +1228,12 @@ function watchVideo(videoId) {
         <div class="video-actions" style="margin-top:12px;"><button class="btn btn-primary btn-sm" style="width:100%;" type="button" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}', this)">Share video</button></div>
       `;
     }
-  }).catch(() => {});
+  }).catch(error => {
+    if (!modal.isConnected) return;
+    console.error('Unable to load video details', error);
+    const info = modal.querySelector('#modal-video-info');
+    if (info) info.innerHTML = '<div style="color:#a33;">This recommendation is no longer available. Please refresh and try another video.</div>';
+  });
 
 }
 
