@@ -9,6 +9,7 @@ from app.schemas.posting_history import PostHistoryResponse
 from app.schemas.video import VideoListResponse, VideoResponse
 from app.services.history import record_posted, record_share
 from app.services.videos import get_video, list_videos, stream_video
+from app.services.reminder import get_daily_recommendations
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -24,6 +25,15 @@ def get_videos(
     """List active videos with optional category filter and text search."""
     items, total = list_videos(db, category_id=category_id, search=search, skip=skip, limit=limit)
     return VideoListResponse(items=items, total=total, skip=skip, limit=limit)
+
+
+@router.get("/recommendations", response_model=list[VideoResponse])
+def recommendations(
+    limit: int = Query(default=3, ge=1, le=10),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return get_daily_recommendations(db, current_user.id, limit=limit)
 
 
 @router.get("/{video_id}", response_model=VideoResponse)

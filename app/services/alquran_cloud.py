@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from datetime import date, datetime, timezone
 
 import requests
 
@@ -147,3 +148,38 @@ def get_surah(number: int) -> dict:
             raise AlQuranCloudError("The live Quran provider returned invalid surah content.") from exc
 
     return dict(_cached(f"surah:{number}", load, 3600))
+
+
+def get_verse_of_day(day: date | None = None) -> dict:
+    """Select one real verse deterministically from the UTC calendar day."""
+    daily_date = day or datetime.now(timezone.utc).date()
+    key = f"daily-verse:{daily_date.isoformat()}"
+
+    def load():
+        surahs = sorted(get_surahs(), key=lambda item: item["id"])
+        total = sum(item["verses_count"] for item in surahs)
+        if total <= 0:
+            raise AlQuranCloudError("The live Quran provider returned no verses.")
+        offset = daily_date.toordinal() % total
+        selected = None
+        verse_number = 0
+        for item in surahs:
+            if offset < item["verses_count"]:
+                selected = item
+                verse_number = offset + 1
+                break
+            offset -= item["verses_count"]
+        if selected is None:
+            raise AlQuranCloudError("The live Quran provider returned invalid verse counts.")
+        result = get_surah(selected["id"])
+        verse = next(
+            (item for item in result["verses"] if item["verse_number"] == verse_number),
+            None,
+        )
+        if verse is None:
+            raise AlQuranCloudError("The selected daily verse was not returned by the provider.")
+        verse = dict(verse)
+        verse["date"] = daily_date.isoformat()
+        return verse
+
+    return dict(_cached(key, load, 86400))

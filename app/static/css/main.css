@@ -70,6 +70,7 @@ h1, h2, h3, h4 { color: var(--color-text); line-height: 1.2; }
 
 /* ── Search ────────────────────────────────────────────────────────────── */
 .search-wrap { position: relative; margin-bottom: var(--space-md); }
+.search-clear { position: absolute; right: 10px; border: 0; background: transparent; color: var(--color-muted); font-size: 1.25rem; cursor: pointer; }
 .search-wrap .search-icon {
   position: absolute; left: var(--space-md); top: 50%; transform: translateY(-50%);
   color: var(--color-muted); font-size: 1.25rem; pointer-events: none;
@@ -158,6 +159,12 @@ h1, h2, h3, h4 { color: var(--color-text); line-height: 1.2; }
 .reminder-title { font-size: 1.1rem; font-weight: 800; color: var(--color-text); margin-bottom: var(--space-xs); }
 .reminder-desc { font-size: 0.85rem; color: var(--color-muted); margin-bottom: var(--space-md); line-height: 1.4; }
 .reminder-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; }
+.home-recommendations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); margin-bottom: var(--space-lg); }
+.home-recommendation-card { display: flex; min-width: 0; gap: var(--space-sm); align-items: center; padding: var(--space-sm); background: var(--color-card); border-radius: var(--radius-md); box-shadow: var(--shadow-card); }
+.home-recommendation-thumb { width: 72px; height: 48px; flex: 0 0 72px; object-fit: cover; border-radius: var(--radius-sm); background: #000; }
+.home-recommendation-info { min-width: 0; }
+.home-recommendation-info .video-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-dua-card { margin-top: var(--space-lg); }
 
 /* ── Verse ────────────────────────────────────────────────────────────── */
 .verse-card { background: var(--color-card); border-radius: var(--radius-lg); padding: var(--space-lg); text-align: center; box-shadow: var(--shadow-card); }

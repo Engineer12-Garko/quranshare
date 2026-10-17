@@ -7,6 +7,8 @@ let _apiCache = {};
 const _apiInflight = new Map();
 let _apiCacheGeneration = 0;
 const MAX_API_CACHE_ENTRIES = 100;
+let _duaRenderGeneration = 0;
+let _liveDuaDaily = null;
 
 function invalidateApiCache() {
   _apiCache = {};
@@ -466,22 +468,35 @@ async function renderActivate(app) {
 /* ── Home Screen ───────────────────────────────────────────────────────── */
 async function loadVerseOfDay() {
   const now = new Date();
-  const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const utcDate = now.toISOString().slice(0, 10);
   try {
     const cached = JSON.parse(localStorage.getItem('tadabbur_quran_verse_cache') || 'null');
-    if (cached?.localDate === localDate && cached.verse?.arabic && cached.verse?.translation) return cached.verse;
-  } catch {}
+    if (cached?.utcDate === utcDate && cached.verse?.arabic && cached.verse?.translation) return cached.verse;
+  } catch (error) { console.warn('Invalid cached daily verse', error); }
   try {
-    const verse = await API.get(`/content/verse-of-day?date=${encodeURIComponent(localDate)}`, 3600);
-    localStorage.setItem('tadabbur_quran_verse_cache', JSON.stringify({ localDate, verse }));
+    const verse = await API.get(`/content/quran/verse-of-day?date=${encodeURIComponent(utcDate)}`, 86400);
+    localStorage.setItem('tadabbur_quran_verse_cache', JSON.stringify({ utcDate, verse }));
     return verse;
-  } catch {
-    const fallback = todayVerse();
-    return {
-      verse_key: fallback.ref.replace(/^Qur'an\s+/i, ''),
-      arabic: fallback.arabic,
-      translation: fallback.translation,
-    };
+  } catch (error) {
+    throw new Error(`Today's live Qur'an verse is unavailable. ${error.message}`);
+  }
+}
+
+async function loadDailyDua() {
+  const utcDate = new Date().toISOString().slice(0, 10);
+  const dua = await API.get(`/duas/daily?date=${encodeURIComponent(utcDate)}`, 86400);
+  _liveDuaDaily = dua;
+  return dua;
+
+}
+
+async function loadVideoRecommendations() {
+  try {
+    const recommendations = await API.get('/videos/recommendations?limit=3', 86400);
+    return Array.isArray(recommendations) ? recommendations : [];
+  } catch (error) {
+    console.warn('Daily recommendations unavailable; using the existing reminder route', error);
+    return [await API.get('/reminders/today', 60)];
   }
 }
 
@@ -491,10 +506,21 @@ async function renderHome(app) {
   app.innerHTML = `${navHtml('#/home')}<div class="page home-page" id="home-content"><div class="empty-state"><p>Loading...</p></div></div>`;
 
   try {
-    const [video, verse] = await Promise.all([
-      API.get('/reminders/today', 60),
+    const [videos, verse, dua] = await Promise.all([
+      loadVideoRecommendations(),
       loadVerseOfDay(),
+      loadDailyDua(),
     ]);
+    const video = videos[0];
+    if (!video) throw new Error('No video reminders are available.');
+    const recommendationCards = videos.slice(1).map(item => `
+      <article class="home-recommendation-card">
+        ${videoThumbnailMarkup(item, 'home-recommendation-thumb')}
+        <div class="home-recommendation-info">
+          <div class="video-title">${escHtml(item.title)}</div>
+          <button class="watch-link watch-link-button" type="button" onclick="watchVideo(${item.id})">▶ Watch</button>
+        </div>
+      </article>`).join('');
     app.querySelector('#home-content').innerHTML = `
       <div class="page-header">
         <span class="brand">TADABBUR</span>
@@ -517,6 +543,7 @@ async function renderHome(app) {
           </div>
         </div>
       </div>
+      ${recommendationCards ? `<div class="section-title">RECOMMENDED FOR YOU</div><div class="home-recommendations">${recommendationCards}</div>` : ''}
       <div class="section-title">QUR'AN VERSE OF THE DAY</div>
       <div class="verse-card">
         <div class="verse-arabic" dir="rtl" lang="ar" translate="no">${escHtml(verse.arabic)}</div>
@@ -527,9 +554,26 @@ async function renderHome(app) {
           <a href="#/quran?chapter=${encodeURIComponent(verse.chapter_id || verse.verse_key.split(':')[0])}&verse=${encodeURIComponent(verse.verse_number || verse.verse_key.split(':')[1])}" class="verse-link">Read & Reflect →</a>
           <button class="btn btn-outline btn-sm" type="button" onclick="toggleHomeVerse(this)">${isSaved('verse', verse.verse_key) ? '🔖 Saved' : '♡ Save'}</button>
         </div>
+      </div>
+      <div class="section-title">DU'A OF THE DAY</div>
+      <div class="dua-card home-dua-card">
+        <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(dua.arabic)}</div>
+        ${dua.transliteration ? `<div class="dua-transliteration">${escHtml(dua.transliteration)}</div>` : ''}
+        <div class="dua-translation">${escHtml(dua.translation)}</div>
+        <div class="dua-source">${escHtml(dua.source)}${dua.source_reference ? ` · ${escHtml(dua.source_reference)}` : ''}${dua.references?.length ? ` · ${escHtml(dua.references.map(reference => typeof reference === 'string' ? reference : JSON.stringify(reference)).join('; '))}` : ''}</div>
+        <div class="dua-actions">
+          <button class="btn btn-primary btn-sm" type="button" onclick="openDuaDetails('${escHtml(dua.id)}')">Read Du'a →</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="toggleHomeDua(this)">${isSaved('dua', dua.id) ? '🔖 Saved' : '♡ Save'}</button>
+        </div>
       </div>`;
   } catch (e) {
     app.querySelector('#home-content').innerHTML = `<div class="empty-state"><p>${escHtml(e.message)}</p></div>`;
+  }
+
+  function toggleHomeDua(button) {
+    if (!_liveDuaDaily) return;
+    toggleSaved('dua', _liveDuaDaily.id, _liveDuaDaily.title);
+    button.textContent = isSaved('dua', _liveDuaDaily.id) ? '🔖 Saved' : '♡ Save';
   }
 }
 
@@ -752,34 +796,39 @@ let _liveDuaItems = null;
 async function renderDuas(app) {
   const user = await getUser();
   if (!user) { navigate('/'); return; }
+  const generation = ++_duaRenderGeneration;
   app.innerHTML = `${navHtml('#/duas')}<div class="page" id="duas-content"><div class="empty-state"><p>Loading...</p></div></div>`;
 
   let liveDuas;
+  let duaOfDay;
   try {
     const queryParts = [];
     if (_duaSearch) queryParts.push(`search=${encodeURIComponent(_duaSearch)}`);
     if (_duaCategory !== 'All' && _duaCategory !== 'More') queryParts.push(`category=${encodeURIComponent(_duaCategory)}`);
-    const summaries = await API.get(`/duas${queryParts.length ? `?${queryParts.join('&')}` : ''}`, 900);
-    if (!Array.isArray(summaries)) throw new Error('The live Du\'a response was invalid.');
-    liveDuas = summaries.map(item => ({ ...item, icon: '📖' }));
+    queryParts.push('page=1', 'limit=20');
+    const [searchResult, daily] = await Promise.all([
+      API.get(`/duas?${queryParts.join('&')}`, 900),
+      API.get(`/duas/daily?date=${encodeURIComponent(new Date().toISOString().slice(0, 10))}`, 86400),
+    ]);
+    if (generation !== _duaRenderGeneration) return;
+    if (!searchResult || !Array.isArray(searchResult.items)) throw new Error('The live Du\'a response was invalid.');
+    liveDuas = searchResult.items.map(item => ({ ...item, icon: '📖' }));
+    duaOfDay = daily;
+    _liveDuaDaily = daily;
     _liveDuaItems = liveDuas;
-    if (liveDuas[0]) {
-      try {
-        Object.assign(liveDuas[0], await API.get(`/duas/${encodeURIComponent(liveDuas[0].id)}`, 3600));
-      } catch (error) {
-        console.error('Unable to load the daily live Du\'a', error);
-      }
-    }
   } catch (error) {
+    if (generation !== _duaRenderGeneration) return;
     console.error('Unable to load live Du\'as', error);
     liveDuas = DUAS;
+    duaOfDay = todayDua();
+    _liveDuaDaily = null;
     _liveDuaItems = null;
   }
+  if (generation !== _duaRenderGeneration) return;
 
   const categories = _liveDuaItems
     ? ['All', ...[...new Set(liveDuas.map(d => d.category).filter(Boolean))].slice(0, 5)]
     : ['All', 'Morning', 'Evening', 'Sleep', 'More'];
-  const duaOfDay = liveDuas[0] || todayDua();
 
   function pillHtml() {
     return `<div class="pill-row-inner">` + categories.map((c, i) =>
@@ -812,6 +861,7 @@ async function renderDuas(app) {
       <div class="search-wrap">
         <span class="search-icon material-symbols-outlined">search</span>
         <input id="dua-search" class="search-input" type="text" placeholder="Search du'as..." value="${escHtml(_duaSearch)}" />
+        ${_duaSearch ? '<button id="dua-search-clear" class="search-clear" type="button" aria-label="Clear search">×</button>' : ''}
       </div>
       <div class="pill-row">${pillHtml()}</div>
       <div class="section-title">DU'A OF THE DAY</div>
@@ -845,6 +895,10 @@ async function renderDuas(app) {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { _duaSearch = e.target.value.trim(); renderDuas(app); }, 350);
     });
+    el.querySelector('#dua-search-clear')?.addEventListener('click', () => {
+      _duaSearch = '';
+      renderDuas(app);
+    });
   }
 
   renderList();
@@ -853,7 +907,7 @@ async function renderDuas(app) {
 function setDuaCategory(cat) { _duaCategory = cat; _duaSearch = ''; return renderDuas(document.getElementById('app')); }
 
 function toggleDuaSaved(duaId) {
-  const dua = _liveDuaItems?.find(item => item.id === duaId) || DUAS.find(item => item.id === duaId);
+  const dua = (_liveDuaItems?.find(item => item.id === duaId) || (_liveDuaDaily?.id === duaId ? _liveDuaDaily : null) || DUAS.find(item => item.id === duaId));
   if (!dua) return;
   toggleSaved('dua', dua.id, dua.title);
   if (window.location.hash === '#/saved') renderSaved(document.getElementById('app'));
@@ -861,7 +915,7 @@ function toggleDuaSaved(duaId) {
 }
 
 async function openDuaDetails(duaId) {
-  let dua = _liveDuaItems?.find(item => item.id === duaId) || DUAS.find(item => item.id === duaId);
+  let dua = _liveDuaItems?.find(item => item.id === duaId) || (_liveDuaDaily?.id === duaId ? _liveDuaDaily : null) || DUAS.find(item => item.id === duaId);
   if (!dua) return;
   const staticBody = !_liveDuaItems ? `
       <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(dua.arabic)}</div>

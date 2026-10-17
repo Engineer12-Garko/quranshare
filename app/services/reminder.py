@@ -74,3 +74,48 @@ def get_today_reminder(db: Session, user_id: int) -> Video:
         selected_idx = (selected_idx + 1) % len(eligible)
 
     return eligible[selected_idx]
+
+
+def get_daily_recommendations(
+    db: Session,
+    user_id: int,
+    limit: int = 3,
+    today: date | None = None,
+) -> list[Video]:
+    """Return stable, user-scoped recommendations for one UTC calendar day."""
+    if not 1 <= limit <= 10:
+        raise ValueError("limit must be between 1 and 10")
+    current_day = today or datetime.now(timezone.utc).date()
+    videos = db.query(Video).filter(Video.is_active.is_(True)).all()
+    if not videos:
+        return []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=settings.recent_exclusion_limit)
+    recent_ids = {
+        row[0] for row in db.query(PostingHistory.video_id)
+        .filter(PostingHistory.user_id == user_id)
+        .filter(PostingHistory.action == "posted")
+        .filter(PostingHistory.posted_at >= cutoff)
+        .all()
+    }
+    eligible = [video for video in videos if video.id not in recent_ids] or videos
+
+    def rank(video: Video) -> str:
+        seed = f"{user_id}:{current_day.isoformat()}:{video.id}"
+        return hashlib.sha256(seed.encode()).hexdigest()
+
+    ranked = sorted(eligible, key=rank)
+    if len(ranked) > 1:
+        yesterday = current_day - timedelta(days=1)
+        previous = sorted(
+            eligible,
+            key=lambda video: hashlib.sha256(
+                f"{user_id}:{yesterday.isoformat()}:{video.id}".encode()
+            ).hexdigest(),
+        )
+        previous_ids = {video.id for video in previous[:limit]}
+        if ranked[0].id in previous_ids:
+            replacement = next((video for video in ranked if video.id not in previous_ids), None)
+            if replacement:
+                ranked.remove(replacement)
+                ranked.insert(0, replacement)
+    return ranked[:limit]

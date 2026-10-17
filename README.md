@@ -134,6 +134,7 @@ Quran Foundation routes remain available for verse of the day and compatibility:
 
 - `GET /api/v1/content/quran/surahs`
 - `GET /api/v1/content/quran/surahs/{surah_number}`
+- `GET /api/v1/content/quran/verse-of-day?date=YYYY-MM-DD`
 
 The selected English translation is `en.sahih` (Saheeh International), and
 verse-by-verse `ar.alafasy` audio URLs are returned when available. AlQuran
@@ -141,10 +142,16 @@ Cloud requires no API key for these public endpoints. Responses are validated,
 cached briefly in memory, and upstream failures are returned as sanitized
 503/429 responses.
 
+The daily verse uses the UTC calendar date, sorted surah identifiers, and a
+cumulative verse-count offset. The selected verse is then fetched from only
+the selected surah and cached for that UTC date, so refreshes do not change
+the result.
+
 Du'as are loaded from the public OpenDua API without an API key:
 
 - `GET /api/v1/duas/collections`
 - `GET /api/v1/duas?search=...&category=...`
+- `GET /api/v1/duas/daily?date=YYYY-MM-DD`
 - `GET /api/v1/duas/{entry_id}`
 
 OpenDua entries provide Arabic, transliteration, English translation, source
@@ -155,3 +162,18 @@ outside the short-lived server cache. No additional environment variables are
 required. If either provider is unavailable or rate-limited, the backend
 returns a sanitized error; the existing local Du'a entries remain a
 compatibility fallback for the client and for previously saved items.
+
+Du'a search returns a bounded page (20 by default, up to 50) and ranks exact
+and title matches before category/reference matches. OpenDua's documented
+collection-entry summary response exposes title, chapter and source reference;
+it does not expose Arabic, transliteration, or full-text search fields in that
+summary endpoint. The application therefore searches only those genuinely
+available summary fields and loads full Arabic/transliteration/translation
+content only for the selected entry or daily entry. Unicode, case, whitespace,
+Arabic diacritics, and common Arabic letter variants are normalized for the
+supported fields without altering displayed content.
+
+Daily Du'a selection sorts stable OpenDua entry IDs and uses the UTC date modulo
+the available entry count. Video recommendations use active database videos,
+the authenticated user's own recent posted history, a UTC-date/user seed, and
+stable hashing; no recommendation or history data is shared between users.

@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import unicodedata
+from datetime import date, datetime, timezone
 
 import requests
 
@@ -136,7 +138,7 @@ def get_entry(entry_id: str) -> dict:
 
 def search_entries(query: str = "", category: str = "") -> list[dict]:
     chapters = {item["id"]: item for item in get_chapters()}
-    summaries = get_entry_summaries()
+    summaries = sorted(get_entry_summaries(), key=lambda item: str(item.get("id", "")))
     query_lower = query.strip().casefold()
     category_lower = category.strip().casefold()
     matching = []
@@ -156,3 +158,72 @@ def search_entries(query: str = "", category: str = "") -> list[dict]:
             "source": "OpenDua",
         })
     return matching
+
+
+def normalize_search_text(value: str) -> str:
+    """Normalize searchable Latin and Arabic text without changing display text."""
+    value = unicodedata.normalize("NFKC", value or "").casefold()
+    value = "".join(
+        char for char in unicodedata.normalize("NFD", value)
+        if unicodedata.category(char) != "Mn"
+    )
+    arabic_variants = str.maketrans({
+        "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
+        "ى": "ي", "ة": "ه", "ؤ": "و", "ئ": "ي",
+    })
+    return " ".join(value.translate(arabic_variants).split())
+
+
+def search_entries_page(query: str = "", category: str = "", page: int = 1, limit: int = 20) -> dict:
+    if page < 1 or not 1 <= limit <= 50:
+        raise ValueError("page must be positive and limit must be between 1 and 50")
+    normalized_query = normalize_search_text(query)
+    normalized_category = normalize_search_text(category)
+    chapters = {item["id"]: item for item in get_chapters()}
+    summaries = get_entry_summaries()
+    ranked = []
+    for item in summaries:
+        chapter = chapters.get(item.get("chapterId")) or {}
+        title = str(item.get("title") or "")
+        chapter_title = str(chapter.get("title") or "OpenDua")
+        reference = str(item.get("sourceReference") or "")
+        searchable = normalize_search_text(f"{title} {chapter_title} {reference}")
+        category_match = not normalized_category or normalized_category in normalize_search_text(chapter_title)
+        if not category_match:
+            continue
+        if normalized_query and normalized_query not in searchable:
+            continue
+        score = 0
+        if normalized_query:
+            if normalized_query == normalize_search_text(title):
+                score += 100
+            if normalized_query in normalize_search_text(title):
+                score += 25
+            if normalized_query in normalize_search_text(chapter_title):
+                score += 10
+        ranked.append((score, item, chapter_title))
+    ranked.sort(key=lambda row: (-row[0], str(row[1].get("id", ""))))
+    total = len(ranked)
+    start = (page - 1) * limit
+    return {
+        "items": [{
+            "id": str(item["id"]),
+            "title": str(item.get("title") or item["id"]),
+            "category": chapter_title,
+            "source_reference": item.get("sourceReference"),
+            "source": "OpenDua",
+        } for _, item, chapter_title in ranked[start:start + limit]],
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "has_more": start + limit < total,
+    }
+
+
+def get_dua_of_day(day: date | None = None) -> dict:
+    daily_date = day or datetime.now(timezone.utc).date()
+    summaries = get_entry_summaries()
+    if not summaries:
+        raise OpenDuaError("The live Du'a provider returned no entries.")
+    index = daily_date.toordinal() % len(summaries)
+    return get_entry(str(summaries[index]["id"]))

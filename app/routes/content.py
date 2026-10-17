@@ -4,9 +4,9 @@ from fastapi import APIRouter, HTTPException, Path, Query, Response, status
 
 from app.schemas.quran import (
     ChapterResponse, ChapterVersesResponse, LiveChapterVersesResponse,
-    VerseOfDayResponse, VerseResponse,
+    VerseOfDayResponse, VerseResponse, LiveVerseResponse,
 )
-from app.services.alquran_cloud import AlQuranCloudError, get_surahs, get_surah
+from app.services.alquran_cloud import AlQuranCloudError, get_surahs, get_surah, get_verse_of_day as get_live_verse_of_day
 from app.services.quran_foundation import (
     QuranFoundationError, get_chapter_verses, get_chapters, get_verse_by_key, get_verse_of_day,
 )
@@ -108,4 +108,14 @@ def live_surah(
     except AlQuranCloudError as exc:
         raise _live_quran_error(exc) from exc
     response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+    return result
+
+
+@router.get("/quran/verse-of-day", response_model=LiveVerseResponse)
+def live_verse_of_day(response: Response, requested_date: date | None = Query(default=None, alias="date")):
+    try:
+        result = get_live_verse_of_day(requested_date)
+    except AlQuranCloudError as exc:
+        raise _live_quran_error(exc) from exc
+    response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=86400"
     return result

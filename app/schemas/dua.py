@@ -16,3 +16,11 @@ class DuaResponse(DuaSummaryResponse):
     references: list[dict | str] = Field(default_factory=list)
     audio_url: str | None = None
     source_url: str
+
+
+class DuaSearchResponse(BaseModel):
+    items: list[DuaSummaryResponse]
+    total: int
+    page: int
+    limit: int
+    has_more: bool

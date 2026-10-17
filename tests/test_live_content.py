@@ -94,6 +94,21 @@ def test_alquran_keeps_text_when_audio_is_unavailable():
     assert result["verses"][0]["audio_url"] is None
 
 
+def test_alquran_daily_verse_is_stable_and_uses_utc_date():
+    surahs = [
+        {"id": 1, "name_simple": "One", "name_arabic": "١", "verses_count": 2},
+        {"id": 2, "name_simple": "Two", "name_arabic": "٢", "verses_count": 2},
+    ]
+    with patch.object(aq, "get_surahs", return_value=surahs), \
+         patch.object(aq, "get_surah", side_effect=[
+             {"verses": [{"verse_number": 1, "verse_key": "1:1"}]},
+             {"verses": [{"verse_number": 2, "verse_key": "1:2"}]},
+         ]):
+        first = aq.get_verse_of_day(__import__("datetime").date(2026, 10, 17))
+        second = aq.get_verse_of_day(__import__("datetime").date(2026, 10, 17))
+    assert first == second
+
+
 def test_alquran_rejects_invalid_surah_identifier():
     with pytest.raises(ValueError):
         aq.get_surah(115)
@@ -148,6 +163,21 @@ def test_opendua_search_filters_real_entry_summaries():
     assert result[0]["id"] == "entry-000001"
 
 
+def test_opendua_normalizes_arabic_and_latin_search_text():
+    assert opendua.normalize_search_text("  WÁKE   UP ") == "wake up"
+    assert opendua.normalize_search_text("إِيمَان") == "ايمان"
+
+
+def test_opendua_daily_dua_is_stable_and_uses_summary_ids():
+    with patch.object(opendua, "get_entry_summaries", return_value=[
+        {"id": "entry-000001"},
+        {"id": "entry-000002"},
+    ]), patch.object(opendua, "get_entry", side_effect=lambda entry_id: {"id": entry_id}):
+        first = opendua.get_dua_of_day(__import__("datetime").date(2026, 10, 17))
+        second = opendua.get_dua_of_day(__import__("datetime").date(2026, 10, 17))
+    assert first == second
+
+
 def test_live_quran_routes_return_normalized_data(client):
     from app.routes import content
 
@@ -190,12 +220,12 @@ def test_dua_routes_support_search_and_detail(client):
         "audio_url": None,
         "source_url": "https://opendua.org",
     }
-    with patch.object(duas, "search_entries", return_value=summary), \
+    with patch.object(duas, "search_entries", return_value={"items": summary, "total": 1, "page": 1, "limit": 20, "has_more": False}), \
          patch.object(duas, "get_entry", return_value=detail):
         result = client.get("/api/v1/duas?search=wake")
         entry = client.get("/api/v1/duas/entry-000001")
     assert result.status_code == 200
-    assert result.json()[0]["id"] == "entry-000001"
+    assert result.json()["items"][0]["id"] == "entry-000001"
     assert entry.status_code == 200
     assert entry.json()["translation"] == "Translation"
 
@@ -207,6 +237,42 @@ def test_provider_rate_limit_routes_are_explicit(client):
          patch.object(duas, "search_entries", side_effect=opendua.OpenDuaError("limited", 429)):
         assert client.get("/api/v1/content/quran/surahs").status_code == 429
         assert client.get("/api/v1/duas").status_code == 429
+
+
+def test_daily_routes_return_provider_content(client):
+    from app.routes import content, duas
+
+    verse = {
+        "verse_key": "1:1",
+        "chapter_id": 1,
+        "verse_number": 1,
+        "chapter_name": "Al-Fatihah",
+        "chapter_name_arabic": "الفاتحة",
+        "arabic": "Arabic",
+        "translation": "Translation",
+        "translation_source": "en.sahih",
+        "translation_resource_id": "en.sahih",
+        "source": "AlQuran Cloud API",
+        "audio_url": None,
+        "date": "2026-10-17",
+    }
+    dua = {
+        "id": "entry-000001",
+        "title": "Wake up",
+        "category": "Morning",
+        "source_reference": "1",
+        "source": "OpenDua",
+        "arabic": "عربي",
+        "transliteration": None,
+        "translation": "Translation",
+        "references": [],
+        "audio_url": None,
+        "source_url": "https://opendua.org",
+    }
+    with patch.object(content, "get_live_verse_of_day", return_value=verse), \
+         patch.object(duas, "get_dua_of_day", return_value=dua):
+        assert client.get("/api/v1/content/quran/verse-of-day?date=2026-10-17").status_code == 200
+        assert client.get("/api/v1/duas/daily?date=2026-10-17").json()["id"] == "entry-000001"
 
 
 @pytest.mark.parametrize("service, url", [

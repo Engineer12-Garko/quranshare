@@ -10,7 +10,7 @@ from app.database import Base
 from app.models.user import User
 from app.models.video import Video
 from app.models.posting_history import PostingHistory
-from app.services.reminder import get_today_reminder
+from app.services.reminder import get_daily_recommendations, get_today_reminder
 from app.utils.security import hash_password
 
 
@@ -204,3 +204,45 @@ class TestDailyRotation:
             ]
 
             assert len(set(results)) == 1
+
+    def test_recommendations_are_stable_and_bounded(self, db_session, test_user, active_videos):
+        day = date(2026, 10, 17)
+        first = get_daily_recommendations(db_session, test_user.id, today=day)
+        second = get_daily_recommendations(db_session, test_user.id, today=day)
+        assert [video.id for video in first] == [video.id for video in second]
+        assert len(first) == 3
+
+    def test_recommendations_exclude_recently_posted_for_one_user(self, db_session, test_user, active_videos):
+        db_session.add(PostingHistory(
+            user_id=test_user.id,
+            video_id=active_videos[0].id,
+            action="posted",
+        ))
+        db_session.commit()
+        result = get_daily_recommendations(
+            db_session, test_user.id, today=date(2026, 10, 17)
+        )
+        assert active_videos[0].id not in [video.id for video in result]
+
+    def test_recommendations_do_not_share_exclusions_between_users(
+        self, db_session, test_user, active_videos
+    ):
+        other = User(
+            email="other-recommendation@test.com",
+            password_hash=hash_password("Secret123"),
+            display_name="Other",
+            role="user",
+            is_active=True,
+        )
+        db_session.add(other)
+        db_session.commit()
+        db_session.add(PostingHistory(
+            user_id=test_user.id,
+            video_id=active_videos[0].id,
+            action="posted",
+        ))
+        db_session.commit()
+        result = get_daily_recommendations(
+            db_session, other.id, today=date(2026, 10, 17)
+        )
+        assert active_videos[0].id in [video.id for video in result]
