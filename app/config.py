@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     qf_client_id: str = ""
     qf_client_secret: str = ""
     qf_env: Literal["prelive", "production"] = "prelive"
-    qf_translation_id: str = "131"
+    # Resource 85 is available in Prelive. Production deployments can set 131
+    # explicitly when using the Clear Quran translation there.
+    qf_translation_id: str = "85"
 
     # Reminder
     recent_exclusion_limit: int = 7

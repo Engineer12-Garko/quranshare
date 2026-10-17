@@ -8,6 +8,8 @@ Algorithm (O(n) using a hash set for duplicate detection per DSA spec):
       else                  → insert
   deactivate rows whose drive_file_id is no longer in Drive
 """
+from collections import deque
+
 from sqlalchemy.orm import Session
 
 from app.models.category import Category
@@ -49,10 +51,14 @@ def sync_drive(db: Session) -> dict:
     
     # Breadth-first search queue to crawl folders recursively.
     # The root folder is not itself a category; immediate child folders are.
-    folders_to_process = [(root_folder, None)]
+    folders_to_process = deque([(root_folder, None)])
+    visited_folders: set[str] = set()
 
     while folders_to_process:
-        current_folder, category_id = folders_to_process.pop(0)
+        current_folder, category_id = folders_to_process.popleft()
+        if current_folder in visited_folders:
+            continue
+        visited_folders.add(current_folder)
         
         # 1. Fetch subfolders of current folder and add to queue
         try:
@@ -83,12 +89,20 @@ def sync_drive(db: Session) -> dict:
                 if drive_id in existing:
                     # Update existing record (O(1) lookup)
                     video = existing[drive_id]
-                    video.title = f.get("name", video.title)
-                    video.category_id = category_id
-                    video.drive_web_view_link = f.get("webViewLink")
-                    video.drive_download_link = f.get("webContentLink")
-                    video.is_active = True
-                    updated += 1
+                    values = {
+                        "title": f.get("name", video.title),
+                        "category_id": category_id,
+                        "drive_web_view_link": f.get("webViewLink"),
+                        "drive_download_link": f.get("webContentLink"),
+                        "is_active": True,
+                    }
+                    changed = False
+                    for field, value in values.items():
+                        if getattr(video, field) != value:
+                            setattr(video, field, value)
+                            changed = True
+                    if changed:
+                        updated += 1
                 else:
                     # Insert new record
                     video = Video(
@@ -100,6 +114,7 @@ def sync_drive(db: Session) -> dict:
                         is_active=True,
                     )
                     db.add(video)
+                    existing[drive_id] = video
                     added += 1
             except Exception as exc:
                 errors.append(f"File '{drive_id}': {exc}")

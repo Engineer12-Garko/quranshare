@@ -4,6 +4,16 @@
 
 /* ── API client ──────────────────────────────────────────────────────────── */
 let _apiCache = {};
+const _apiInflight = new Map();
+let _apiCacheGeneration = 0;
+const MAX_API_CACHE_ENTRIES = 100;
+
+function invalidateApiCache() {
+  _apiCache = {};
+  _apiCacheGeneration += 1;
+  _apiInflight.clear();
+}
+
 // Keep only a small number of prepared files in memory; video streams can be large.
 const _videoCache = new Map();
 const MAX_PREPARED_VIDEO_BYTES = 100 * 1024 * 1024;
@@ -12,23 +22,43 @@ const MAX_PREPARED_CACHE_FILES = 2;
 const API = {
   async request(method, path, body = null, cacheSeconds = 0) {
     const cacheKey = method + path;
-    if (method !== 'GET') { _apiCache = {}; }
-    if (method === 'GET' && cacheSeconds > 0 && _apiCache[cacheKey] && (Date.now() - _apiCache[cacheKey].ts < cacheSeconds * 1000)) {
-      return _apiCache[cacheKey].data;
+    if (method !== 'GET') invalidateApiCache();
+    const cached = method === 'GET' ? _apiCache[cacheKey] : null;
+    if (cacheSeconds > 0 && cached && (Date.now() - cached.ts < cacheSeconds * 1000)) {
+      delete _apiCache[cacheKey]; // refresh LRU order for bounded cache eviction
+      _apiCache[cacheKey] = cached;
+      return cached.data;
     }
-    const opts = { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
-    if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(`/api/v1${path}`, opts);
-    const ct = res.headers.get('content-type') || '';
-    const data = ct.includes('application/json') ? await res.json() : null;
-    if (!res.ok) {
-      let msg = data?.detail || data?.error?.message;
-      if (Array.isArray(msg)) { msg = msg.map(e => e.msg || JSON.stringify(e)).join(', '); }
-      else if (msg && typeof msg === 'object') { msg = JSON.stringify(msg); }
-      if (!msg) { msg = res.status >= 500 ? 'An unexpected server error occurred. Please try again later.' : `Error (HTTP ${res.status})`; }
-      throw Object.assign(new Error(msg), { status: res.status, data });
+    if (method === 'GET' && _apiInflight.has(cacheKey)) return _apiInflight.get(cacheKey);
+
+    const cacheGeneration = _apiCacheGeneration;
+    const request = (async () => {
+      const opts = { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(`/api/v1${path}`, opts);
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await res.json() : null;
+      if (!res.ok) {
+        let msg = data?.detail || data?.error?.message;
+        if (Array.isArray(msg)) { msg = msg.map(e => e.msg || JSON.stringify(e)).join(', '); }
+        else if (msg && typeof msg === 'object') { msg = JSON.stringify(msg); }
+        if (!msg) { msg = res.status >= 500 ? 'An unexpected server error occurred. Please try again later.' : `Error (HTTP ${res.status})`; }
+        throw Object.assign(new Error(msg), { status: res.status, data });
+      }
+      if (method === 'GET' && cacheSeconds > 0 && cacheGeneration === _apiCacheGeneration) {
+        if (!_apiCache[cacheKey] && Object.keys(_apiCache).length >= MAX_API_CACHE_ENTRIES) {
+          delete _apiCache[Object.keys(_apiCache)[0]];
+        }
+        _apiCache[cacheKey] = { ts: Date.now(), data };
+      }
+      return data;
+    })();
+    if (method === 'GET') _apiInflight.set(cacheKey, request);
+    try {
+      return await request;
+    } finally {
+      if (_apiInflight.get(cacheKey) === request) _apiInflight.delete(cacheKey);
     }
-    return data;
   },
   get:    (p, cache = 0) => API.request('GET',    p, null, cache),
   post:   (p, b) => API.request('POST',   p, b),
@@ -204,9 +234,61 @@ function importLegacySaved() {
 
 /* ── Settings (localStorage) ───────────────────────────────────────────── */
 function getSettings() {
-  try { return JSON.parse(localStorage.getItem('tadabbur_settings') || '{}'); } catch { return {}; }
+  const key = _currentUser?.id ? `tadabbur_settings_${_currentUser.id}` : 'tadabbur_settings';
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved) return JSON.parse(saved);
+    const legacy = JSON.parse(localStorage.getItem('tadabbur_settings') || '{}');
+    const migrated = { quranReminder: false, duaReminder: false, reminderTime: '07:00', ...legacy };
+    if (_currentUser?.id) {
+      localStorage.setItem(key, JSON.stringify(migrated));
+      localStorage.removeItem('tadabbur_settings');
+    }
+    return migrated;
+  } catch { return { quranReminder: false, duaReminder: false, reminderTime: '07:00' }; }
 }
-function setSettings(s) { localStorage.setItem('tadabbur_settings', JSON.stringify(s)); }
+function setSettings(s) {
+  const key = _currentUser?.id ? `tadabbur_settings_${_currentUser.id}` : 'tadabbur_settings';
+  localStorage.setItem(key, JSON.stringify(s));
+}
+
+let _dailyReminderTimer = null;
+function startDailyReminderScheduler() {
+  if (_dailyReminderTimer || typeof window.setInterval !== 'function') return;
+  _dailyReminderTimer = window.setInterval(() => checkDailyReminders(), 30_000);
+  checkDailyReminders();
+}
+
+function checkDailyReminders(now = new Date()) {
+  if (!_currentUser || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const settings = getSettings();
+  const enabled = [
+    settings.quranReminder && { key: 'quran', title: 'Daily Qur’an Reminder', body: 'Take a moment to reflect on today’s reminder.', route: '#/home' },
+    settings.duaReminder && { key: 'dua', title: 'Daily Du’a', body: 'Take a moment to reflect on today’s du’a.', route: '#/duas' },
+  ].filter(Boolean);
+  if (!enabled.length) return;
+
+  const match = /^(\d{2}):(\d{2})$/.exec(settings.reminderTime || '07:00');
+  const hours = match ? Number(match[1]) : 7;
+  const minutes = match ? Number(match[2]) : 0;
+  const scheduled = new Date(now);
+  scheduled.setHours(hours, minutes, 0, 0);
+  const elapsed = now.getTime() - scheduled.getTime();
+  if (elapsed < 0 || elapsed > 10 * 60 * 1000) return;
+
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  for (const reminder of enabled) {
+    const sentKey = `tadabbur_reminder_sent_${_currentUser.id}_${reminder.key}`;
+    if (localStorage.getItem(sentKey) === day) continue;
+    localStorage.setItem(sentKey, day);
+    const notification = new Notification(reminder.title, { body: reminder.body, tag: `tadabbur-${reminder.key}-${day}` });
+    notification.onclick = () => {
+      window.focus?.();
+      window.location.hash = reminder.route;
+      notification.close?.();
+    };
+  }
+}
 
 /* ── Router ────────────────────────────────────────────────────────────── */
 const ROUTES = {
@@ -228,11 +310,18 @@ const ROUTES = {
 let _currentUser = null;
 
 async function getUser() {
-  if (_currentUser) return _currentUser;
-  try { _currentUser = await API.get('/auth/me'); return _currentUser; }
+  if (_currentUser) { startDailyReminderScheduler(); return _currentUser; }
+  try { _currentUser = await API.get('/auth/me'); startDailyReminderScheduler(); return _currentUser; }
   catch { return null; }
 }
-function clearUser() { _currentUser = null; }
+function clearUser() {
+  _currentUser = null;
+  if (_dailyReminderTimer && typeof window.clearInterval === 'function') {
+    window.clearInterval(_dailyReminderTimer);
+    _dailyReminderTimer = null;
+  }
+  invalidateApiCache();
+}
 function navigate(path) { window.location.hash = path; }
 
 async function route() {
@@ -348,14 +437,14 @@ async function loadVerseOfDay() {
   const now = new Date();
   const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   try {
+    const cached = JSON.parse(localStorage.getItem('tadabbur_quran_verse_cache') || 'null');
+    if (cached?.localDate === localDate && cached.verse?.arabic && cached.verse?.translation) return cached.verse;
+  } catch {}
+  try {
     const verse = await API.get(`/content/verse-of-day?date=${encodeURIComponent(localDate)}`, 3600);
     localStorage.setItem('tadabbur_quran_verse_cache', JSON.stringify({ localDate, verse }));
     return verse;
   } catch {
-    try {
-      const cached = JSON.parse(localStorage.getItem('tadabbur_quran_verse_cache') || 'null');
-      if (cached?.localDate === localDate && cached.verse?.arabic && cached.verse?.translation) return cached.verse;
-    } catch {}
     const fallback = todayVerse();
     return {
       verse_key: fallback.ref.replace(/^Qur'an\s+/i, ''),
@@ -371,8 +460,10 @@ async function renderHome(app) {
   app.innerHTML = `${navHtml('#/home')}<div class="page" id="home-content"><div class="empty-state"><p>Loading...</p></div></div>`;
 
   try {
-    const video = await API.get('/reminders/today');
-    const verse = await loadVerseOfDay();
+    const [video, verse] = await Promise.all([
+      API.get('/reminders/today', 60),
+      loadVerseOfDay(),
+    ]);
     app.querySelector('#home-content').innerHTML = `
       <div class="page-header">
         <span class="brand">TADABBUR</span>
@@ -409,19 +500,20 @@ async function renderHome(app) {
 let _videoSearch = '';
 let _videoCategory = 'All';
 let _videoCategoryId = null;
+let _videoRenderGeneration = 0;
 
 async function renderVideos(app) {
   const user = await getUser();
   if (!user) { navigate('/'); return; }
-  app.innerHTML = `${navHtml('#/videos')}<div class="page" id="videos-content"><div class="empty-state"><p>Loading...</p></div></div>`;
+  const renderGeneration = ++_videoRenderGeneration;
+  app.innerHTML = `${navHtml('#/videos')}<div class="page" id="videos-content">
+    <div class="page-header"><span class="brand">TADABBUR</span></div>
+    <h1 class="page-title">Islamic Video Reminders</h1>
+    <p class="page-subtitle">Short reminders, Lasting reflections.</p>
+    <div class="empty-state"><p>Loading videos…</p></div>
+  </div>`;
 
   let categories = [{ id: null, name: 'All' }];
-  try {
-    const loadedCategories = await API.get('/categories', 300);
-    categories = categories.concat((loadedCategories || []).map(c => ({ id: c.id, name: c.name })));
-  } catch (e) {
-    console.error('Unable to load video categories', e);
-  }
 
   function pillHtml() {
     return `<div class="pill-row-inner">` + categories.map((c, i) =>
@@ -430,15 +522,22 @@ async function renderVideos(app) {
     ).join('') + `</div>`;
   }
 
-  async function loadVideos() {
+  let videoLoadSequence = 0;
+  let renderedVideoCount = 0;
+  async function loadVideos(prefetchedResponse = null, prefetchedError = null, append = false) {
+    if (renderGeneration !== _videoRenderGeneration) return;
+    const loadSequence = ++videoLoadSequence;
     const el = app.querySelector('#videos-content');
     if (!el) return;
     try {
-      const qs = new URLSearchParams({ skip: 0, limit: 100 });
+      if (prefetchedError) throw prefetchedError;
+      const qs = new URLSearchParams({ skip: append ? renderedVideoCount : 0, limit: 100 });
       if (_videoSearch) qs.set('search', _videoSearch);
       if (_videoCategoryId !== null) qs.set('category_id', _videoCategoryId);
-      const res = await API.get('/videos?' + qs.toString(), 60);
+      const res = prefetchedResponse || await API.get('/videos?' + qs.toString(), 60);
+      if (renderGeneration !== _videoRenderGeneration || loadSequence !== videoLoadSequence) return;
       let items = res.items || [];
+      if (!append) renderedVideoCount = 0;
 
       const cards = items.map(v => `
         <div class="video-card">
@@ -457,7 +556,7 @@ async function renderVideos(app) {
         </div>
       `).join('');
 
-      el.innerHTML = `
+      const pageHtml = `
         <div class="page-header">
           <span class="brand">TADABBUR</span>
         </div>
@@ -468,20 +567,60 @@ async function renderVideos(app) {
           <input id="video-search" class="search-input" type="text" placeholder="Search Reminders..." value="${escHtml(_videoSearch)}" />
         </div>
         <div class="pill-row">${pillHtml()}</div>
-        <div id="video-list">${cards || '<div class="empty-state"><p>No videos found.</p></div>'}</div>`;
+        <div id="video-list">${append ? '' : (cards || '<div class="empty-state"><p>No videos found.</p></div>')}</div>
+        <div id="video-pagination" style="text-align:center;margin:20px 0;">
+          ${res.total > renderedVideoCount + items.length ? '<button id="load-more-videos" class="btn btn-outline" type="button">Load more videos</button>' : ''}
+        </div>`;
+      if (append) {
+        const list = el.querySelector('#video-list');
+        if (list && cards) list.insertAdjacentHTML('beforeend', cards);
+        const pagination = el.querySelector('#video-pagination');
+        if (pagination) pagination.outerHTML = pageHtml.match(/<div id="video-pagination"[\s\S]*?<\/div>/)?.[0] || '';
+      } else {
+        el.innerHTML = pageHtml;
+      }
+      renderedVideoCount += items.length;
 
-      const searchInput = el.querySelector('#video-search');
-      let searchTimer;
-      searchInput.addEventListener('input', e => {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => { _videoSearch = e.target.value.trim(); loadVideos(); }, 350);
+      if (!append) {
+        const searchInput = el.querySelector('#video-search');
+        let searchTimer;
+        searchInput.addEventListener('input', e => {
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => { _videoSearch = e.target.value.trim(); loadVideos(); }, 350);
+        });
+      }
+      el.querySelector('#load-more-videos')?.addEventListener('click', async event => {
+        event.currentTarget.disabled = true;
+        event.currentTarget.textContent = 'Loading…';
+        await loadVideos(null, null, true);
       });
     } catch (e) {
-      el.innerHTML = `<div class="empty-state"><p>${escHtml(e.message)}</p></div>`;
+      if (renderGeneration !== _videoRenderGeneration || loadSequence !== videoLoadSequence) return;
+      if (append) {
+        const pagination = el.querySelector('#video-pagination');
+        if (pagination) pagination.innerHTML = `<p class="empty-state">${escHtml(e.message)}</p><button id="load-more-videos" class="btn btn-outline" type="button">Try again</button>`;
+        el.querySelector('#load-more-videos')?.addEventListener('click', () => loadVideos(null, null, true));
+      } else {
+        el.innerHTML = `<div class="empty-state"><p>${escHtml(e.message)}</p></div>`;
+      }
     }
   }
 
-  loadVideos();
+  const qs = new URLSearchParams({ skip: 0, limit: 100 });
+  if (_videoSearch) qs.set('search', _videoSearch);
+  if (_videoCategoryId !== null) qs.set('category_id', _videoCategoryId);
+  const categoriesRequest = API.get('/categories', 60).catch(error => {
+    console.error('Unable to load video categories', error);
+    return [];
+  });
+  const videosRequest = API.get('/videos?' + qs.toString(), 60).then(
+    data => ({ data }),
+    error => ({ error }),
+  );
+  const [loadedCategories, initialVideoResult] = await Promise.all([categoriesRequest, videosRequest]);
+  if (renderGeneration !== _videoRenderGeneration) return;
+  categories = categories.concat((loadedCategories || []).map(c => ({ id: c.id, name: c.name })));
+  await loadVideos(initialVideoResult.data || null, initialVideoResult.error || null);
 }
 
 function setVideoCategory(cat, categoryId) {
@@ -698,45 +837,44 @@ async function renderSettings(app) {
         <div class="gear-icon material-symbols-outlined">settings</div>
       </div>
       <h1 class="page-title">Notification & Reminders</h1>
-      <p class="page-subtitle">Stay connected to daily reminders.</p>
+      <p class="page-subtitle">Choose a local reminder time. Notifications appear only while Tadabbur is open in this browser.</p>
       <div class="section-title">DAILY REMINDERS</div>
       <div class="settings-card">
         <div class="settings-icon material-symbols-outlined">notifications</div>
         <div class="settings-info">
           <div class="settings-label">Daily Qur'an Reminder</div>
-          <div class="settings-desc">Receive a short reminder everyday.</div>
+          <div class="settings-desc">A notification linking to today’s video and verse.</div>
         </div>
-        <button class="toggle ${settings.quranReminder ? 'active' : ''}" onclick="toggleSetting('quranReminder')" aria-label="Toggle"></button>
+        <button class="toggle ${settings.quranReminder ? 'active' : ''}" aria-pressed="${Boolean(settings.quranReminder)}" onclick="toggleSetting('quranReminder')" aria-label="Toggle Qur'an reminder"></button>
       </div>
       <div class="settings-card">
         <div class="settings-icon material-symbols-outlined">schedule</div>
         <div class="settings-info">
           <div class="settings-label">Reminder time</div>
         </div>
-        <span class="settings-value">7:00 AM</span>
-        <span class="settings-arrow">›</span>
+        <input id="reminder-time" aria-label="Daily reminder time" type="time" value="${/^([01]\d|2[0-3]):[0-5]\d$/.test(settings.reminderTime || '') ? settings.reminderTime : '07:00'}" onchange="updateReminderTime(this.value)" style="padding:8px;border:1px solid var(--color-border);border-radius:8px;font:inherit;" />
       </div>
       <div class="settings-card">
         <div class="settings-icon material-symbols-outlined">self_improvement</div>
         <div class="settings-info">
           <div class="settings-label">Daily Du'a</div>
-          <div class="settings-desc">A daily supplication to reflect on.</div>
+          <div class="settings-desc">A notification linking to the daily supplication.</div>
         </div>
-        <button class="toggle ${settings.duaReminder ? 'active' : ''}" onclick="toggleSetting('duaReminder')" aria-label="Toggle"></button>
+        <button class="toggle ${settings.duaReminder ? 'active' : ''}" aria-pressed="${Boolean(settings.duaReminder)}" onclick="toggleSetting('duaReminder')" aria-label="Toggle Du'a reminder"></button>
       </div>
+      <p id="reminder-settings-status" class="settings-desc" role="status" aria-live="polite"></p>
       <div class="section-title">LANGUAGE PREFERENCES</div>
-      <div class="card-flat" style="display:flex;gap:12px;">
-        <button class="lang-btn active">English</button>
-        <button class="lang-btn">العربية</button>
+      <div class="card-flat">
+        <div class="settings-label">English</div>
+        <div class="settings-desc">Arabic interface text is not available yet.</div>
       </div>
       <div class="section-title">CONTACT US</div>
       <div class="settings-card">
         <div class="settings-icon material-symbols-outlined">chat</div>
         <div class="settings-info">
           <div class="settings-label">Contact Support</div>
-          <div class="settings-desc">Reach out for help or to provide feedback.</div>
+          <div class="settings-desc">Support contact details are not configured for this deployment.</div>
         </div>
-        <span class="settings-arrow">›</span>
       </div>
     `;
   }
@@ -744,11 +882,40 @@ async function renderSettings(app) {
   renderSettings();
 }
 
-function toggleSetting(key) {
+async function toggleSetting(key) {
   const settings = getSettings();
-  settings[key] = !settings[key];
+  const enabling = !settings[key];
+  let notice = '';
+  if (enabling) {
+    if (typeof Notification === 'undefined') {
+      notice = 'This browser does not support notifications.';
+      return setReminderSettingsNotice(notice);
+    }
+    try {
+      if (Notification.permission === 'default') await Notification.requestPermission();
+    } catch {}
+    if (Notification.permission !== 'granted') {
+      notice = 'Allow notifications in your browser settings, then try again.';
+      return setReminderSettingsNotice(notice);
+    }
+  }
+  settings[key] = enabling;
   setSettings(settings);
-  renderSettings(document.getElementById('app'));
+  await renderSettings(document.getElementById('app'));
+  setReminderSettingsNotice(notice || (enabling ? 'Reminder enabled for this browser while Tadabbur is open.' : 'Reminder disabled.'));
+}
+
+function updateReminderTime(value) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return;
+  const settings = getSettings();
+  settings.reminderTime = value;
+  setSettings(settings);
+  setReminderSettingsNotice(`Reminder time set to ${new Date(`2000-01-01T${value}:00`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`);
+}
+
+function setReminderSettingsNotice(message) {
+  const status = document.getElementById('reminder-settings-status');
+  if (status) status.textContent = message;
 }
 
 /* ── Video Modal ───────────────────────────────────────────────────────── */
@@ -912,7 +1079,7 @@ async function renderHistory(app) {
   if (!user) { navigate('/'); return; }
   app.innerHTML = `${navHtml('')}<div class="page" id="history-content"><div class="empty-state"><p>Loading...</p></div></div>`;
   try {
-    const history = await API.get('/history?skip=0&limit=100');
+    const history = await API.get('/history?skip=0&limit=100', 30);
     const rows = (history.items || []).map(item => `
       <div class="card" style="margin-bottom:12px;">
         <strong>Video #${item.video_id}</strong>
@@ -968,7 +1135,7 @@ async function renderAdmin(app) {
   try {
     const syncButton = `<button id="sync-drive" class="btn btn-primary btn-sm">Sync Google Drive</button>`;
     let users = [];
-    if (user.role === 'admin') users = await API.get('/admin/users?skip=0&limit=200');
+    if (user.role === 'admin') users = await API.get('/admin/users?skip=0&limit=200', 60);
     const userRows = users.map(u => `
       <div class="card" style="margin-bottom:8px;">
         <strong>${escHtml(u.display_name)}</strong> · ${escHtml(u.role)}
@@ -985,7 +1152,7 @@ async function renderAdmin(app) {
         const result = await API.post('/admin/sync/google-drive');
         app.querySelector('#sync-result').textContent = result.success
           ? `Added ${result.added}, updated ${result.updated}, deactivated ${result.deactivated}.`
-          : (result.error || 'Sync failed.');
+          : `${result.error || `Sync incomplete; ${result.failed || 0} failure(s).`} ${(result.errors || []).slice(0, 3).join(' ')}`.trim();
       } catch (err) {
         app.querySelector('#sync-result').textContent = err.message;
       } finally {

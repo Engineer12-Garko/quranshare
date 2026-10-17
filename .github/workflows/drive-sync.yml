@@ -49,3 +49,8 @@ jobs:
             echo "::error::Drive sync failed with HTTP $http_code"
             exit 1
           fi
+
+          if ! jq -e '.success == true' sync_response.json >/dev/null; then
+            echo "::error::Drive sync endpoint returned an unsuccessful or invalid sync summary."
+            exit 1
+          fi

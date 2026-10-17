@@ -14,11 +14,13 @@ function createAppHarness() {
   const duaSearch = { addEventListener() {} };
   const duaContent = { innerHTML: '', querySelector: () => duaSearch };
   const savedContent = { innerHTML: '' };
+  const settingsContent = { innerHTML: '' };
   const app = {
     innerHTML: '',
     querySelector(selector) {
       if (selector === '#duas-content') return duaContent;
       if (selector === '#saved-content') return savedContent;
+      if (selector === '#settings-content') return settingsContent;
       return null;
     },
   };
@@ -43,7 +45,7 @@ function createAppHarness() {
   const source = fs.readFileSync(path.join(__dirname, '../app/static/js/app.js'), 'utf8');
   vm.runInContext(source, sandbox, { filename: 'app.js' });
   vm.runInContext('_currentUser = { id: 41, role: "user" }; todayDua = () => DUAS[0];', sandbox);
-  return { sandbox, app, duaContent, savedContent, body, storage };
+  return { sandbox, app, duaContent, savedContent, settingsContent, body, storage };
 }
 
 test('Dua search matches English translation and provides a no-results state', async () => {
@@ -91,4 +93,32 @@ test('Daily Dua selection is stable during repeated reads on the same date', () 
   const first = sandbox.todayDua().id;
   const second = sandbox.todayDua().id;
   assert.equal(first, second);
+});
+
+test('reminder settings expose an editable time and explain browser-open delivery', async () => {
+  const { sandbox, app, settingsContent } = createAppHarness();
+  await sandbox.renderSettings(app);
+  assert.match(settingsContent.innerHTML, /type="time"/);
+  assert.match(settingsContent.innerHTML, /value="07:00"/);
+  assert.match(settingsContent.innerHTML, /only while Tadabbur is open in this browser/);
+});
+
+test('reminder preferences are isolated by profile and daily notifications are sent once', () => {
+  const { sandbox } = createAppHarness();
+  const notifications = [];
+  sandbox.Notification = class {
+    static permission = 'granted';
+    constructor(title, options) { this.title = title; this.options = options; notifications.push(this); }
+  };
+  sandbox.setSettings({ quranReminder: true, duaReminder: true, reminderTime: '07:00' });
+  vm.runInContext('_currentUser = { id: 42, role: "user" };', sandbox);
+  assert.equal(sandbox.getSettings().quranReminder, false);
+  vm.runInContext('_currentUser = { id: 41, role: "user" };', sandbox);
+  const reminderTime = new Date('2026-10-17T07:05:00');
+  sandbox.checkDailyReminders(reminderTime);
+  sandbox.checkDailyReminders(reminderTime);
+  assert.equal(notifications.length, 2);
+  assert.deepEqual(notifications.map(n => n.options.tag).sort(), [
+    'tadabbur-dua-2026-10-17', 'tadabbur-quran-2026-10-17',
+  ]);
 });

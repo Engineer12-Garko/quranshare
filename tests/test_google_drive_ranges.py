@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.services.google_drive import _parse_range
+from app.services.google_drive import _parse_range, _prefetch_first_chunk
 
 
 @pytest.mark.parametrize(
@@ -33,3 +33,18 @@ def test_rejects_ranges_for_empty_file():
     with pytest.raises(HTTPException) as exc:
         _parse_range("bytes=0-", 0)
     assert exc.value.status_code == 416
+
+
+def test_prefetch_keeps_first_chunk_and_remaining_stream_order():
+    chunks = _prefetch_first_chunk(iter([b"first", b"second"]))
+    assert list(chunks) == [b"first", b"second"]
+
+
+def test_upstream_stream_failure_is_returned_as_gateway_error_before_streaming():
+    def failed_stream():
+        raise ConnectionError("upstream unavailable")
+        yield b"unreachable"
+
+    with pytest.raises(HTTPException) as exc:
+        _prefetch_first_chunk(failed_stream())
+    assert exc.value.status_code == 502

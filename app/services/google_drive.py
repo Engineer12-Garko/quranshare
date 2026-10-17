@@ -5,6 +5,7 @@ Uses the official Google Drive API v3 via a service account.
 The service account JSON is stored in the GOOGLE_SERVICE_ACCOUNT env var.
 """
 import json
+from itertools import chain
 from typing import Generator
 
 from fastapi import HTTPException, status
@@ -49,6 +50,8 @@ class GoogleDriveService:
                     fields=fields,
                     pageSize=100,
                     pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 )
                 .execute()
             )
@@ -59,21 +62,31 @@ class GoogleDriveService:
         return results
 
     def list_subfolders(self, parent_id: str) -> list[dict]:
-        """Return immediate subfolder entries (id, name) inside `parent_id`."""
-        resp = (
-            self._svc.files()
-            .list(
-                q=(
-                    f"'{parent_id}' in parents "
-                    f"and mimeType='application/vnd.google-apps.folder' "
-                    f"and trashed=false"
-                ),
-                fields="files(id,name)",
-                pageSize=50,
-            )
-            .execute()
+        """Return every immediate subfolder, following Drive page tokens."""
+        results = []
+        page_token = None
+        query = (
+            f"'{parent_id}' in parents "
+            f"and mimeType='application/vnd.google-apps.folder' "
+            f"and trashed=false"
         )
-        return resp.get("files", [])
+        while True:
+            response = (
+                self._svc.files()
+                .list(
+                    q=query,
+                    fields="nextPageToken,files(id,name)",
+                    pageSize=100,
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
+            )
+            results.extend(response.get("files", []))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                return results
 
     def stream_file(self, drive_file_id: str, range_header: str | None) -> StreamingResponse:
         """
@@ -81,11 +94,21 @@ class GoogleDriveService:
         Supports HTTP Range requests for video seeking.
         """
         # Get file metadata to know size
-        meta = (
-            self._svc.files()
-            .get(fileId=drive_file_id, fields="size,mimeType")
-            .execute()
-        )
+        try:
+            meta = (
+                self._svc.files()
+                .get(fileId=drive_file_id, fields="size,mimeType", supportsAllDrives=True)
+                .execute()
+            )
+        except Exception as exc:
+            from googleapiclient.errors import HttpError
+
+            if isinstance(exc, HttpError):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Google Drive could not provide this video. Check the file is shared with the service account.",
+                ) from exc
+            raise
         file_size = int(meta.get("size", 0))
 
         if range_header:
@@ -97,8 +120,9 @@ class GoogleDriveService:
                 "Content-Length": str(length),
                 "Content-Type": "video/mp4",
             }
+            chunks = _prefetch_first_chunk(_download_range(self._svc, drive_file_id, start, end, self._CHUNK))
             return StreamingResponse(
-                _download_range(self._svc, drive_file_id, start, end, self._CHUNK),
+                chunks,
                 status_code=206,
                 headers=headers,
                 media_type="video/mp4",
@@ -109,8 +133,9 @@ class GoogleDriveService:
             "Content-Length": str(file_size),
             "Content-Type": "video/mp4",
         }
+        chunks = _prefetch_first_chunk(_download_full(self._svc, drive_file_id, self._CHUNK))
         return StreamingResponse(
-            _download_full(self._svc, drive_file_id, self._CHUNK),
+            chunks,
             status_code=200,
             headers=headers,
             media_type="video/mp4",
@@ -154,6 +179,22 @@ def get_drive_service() -> GoogleDriveService:
 
 # ── streaming helpers ──────────────────────────────────────────────────────────
 
+def _prefetch_first_chunk(chunks: Generator[bytes, None, None]):
+    """Fetch one chunk before sending headers so upstream failures become HTTP 502."""
+    try:
+        first_chunk = next(chunks)
+    except StopIteration as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Google Drive returned an empty video stream.",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Google Drive could not stream this video. Check the file is accessible to the service account.",
+        ) from exc
+    return chain((first_chunk,), chunks)
+
 def _parse_range(range_header: str, file_size: int) -> tuple[int, int]:
     """Parse one RFC 7233 byte range, including open-ended and suffix ranges."""
     try:
@@ -192,7 +233,7 @@ def _download_full(svc, file_id: str, chunk_size: int) -> Generator[bytes, None,
     from googleapiclient.http import MediaIoBaseDownload
     import io
     fh = io.BytesIO()
-    request = svc.files().get_media(fileId=file_id)
+    request = svc.files().get_media(fileId=file_id, supportsAllDrives=True)
     downloader = MediaIoBaseDownload(fh, request, chunksize=chunk_size)
     done = False
     while not done:
@@ -205,7 +246,7 @@ def _download_full(svc, file_id: str, chunk_size: int) -> Generator[bytes, None,
 
 def _download_range(svc, file_id: str, start: int, end: int, chunk_size: int) -> Generator[bytes, None, None]:
     """Stream a byte range from Drive iteratively in chunks to avoid OOM."""
-    request = svc.files().get_media(fileId=file_id)
+    request = svc.files().get_media(fileId=file_id, supportsAllDrives=True)
     uri = request.uri
     http = svc._http
 
@@ -221,8 +262,10 @@ def _download_range(svc, file_id: str, start: int, end: int, chunk_size: int) ->
         
         # A 200 response means Drive ignored the Range header. Sending that
         # body would corrupt the browser's partial-content response.
-        if resp.status != 206 or not content:
-            break
+        if resp.status != 206:
+            raise OSError(f"Google Drive returned HTTP {resp.status} for a ranged video request.")
+        if not content:
+            raise OSError("Google Drive returned an empty chunk for a ranged video request.")
 
         expected_length = current_end - current_start + 1
         if len(content) > expected_length:
