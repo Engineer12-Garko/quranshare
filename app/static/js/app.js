@@ -4,7 +4,11 @@
 
 /* ── API client ──────────────────────────────────────────────────────────── */
 let _apiCache = {};
+// Keep only a small number of prepared files in memory; video streams can be large.
 const _videoCache = new Map();
+const MAX_PREPARED_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_PREPARED_CACHE_BYTES = 150 * 1024 * 1024;
+const MAX_PREPARED_CACHE_FILES = 2;
 const API = {
   async request(method, path, body = null, cacheSeconds = 0) {
     const cacheKey = method + path;
@@ -32,20 +36,79 @@ const API = {
   delete: (p)    => API.request('DELETE', p),
 };
 
-/* ── Video blob cache ──────────────────────────────────────────────────── */
-async function cacheVideoBlob(videoId) {
-  if (_videoCache.has(videoId)) return true;
-  try {
-    const resp = await fetch(`/api/v1/videos/${videoId}/stream`, { credentials: 'same-origin' });
-    if (!resp.ok) return false;
-    const blob = await resp.blob();
-    _videoCache.set(videoId, blob);
-    return true;
-  } catch { return false; }
+/* ── Prepared video file cache ──────────────────────────────────────────── */
+function cachePreparedVideo(videoId, file) {
+  _videoCache.delete(videoId);
+  let total = [..._videoCache.values()].reduce((sum, entry) => sum + entry.file.size, 0);
+  while (_videoCache.size && (_videoCache.size >= MAX_PREPARED_CACHE_FILES || total + file.size > MAX_PREPARED_CACHE_BYTES)) {
+    const oldestId = _videoCache.keys().next().value;
+    total -= _videoCache.get(oldestId).file.size;
+    _videoCache.delete(oldestId);
+  }
+  _videoCache.set(videoId, { file, preparedAt: Date.now() });
 }
 
-function videoStreamUrl(videoId) {
-  return `${window.location.origin}/api/v1/videos/${videoId}/stream`;
+function videoShareStatus(button, message, isError = false) {
+  const host = button?.closest?.('.video-actions') || button?.parentElement;
+  if (!host) return;
+  let status = host.querySelector('.video-share-status');
+  if (!status) {
+    status = document.createElement('div');
+    status.className = 'video-share-status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    host.appendChild(status);
+  }
+  status.textContent = message;
+  status.classList.toggle('is-error', isError);
+}
+
+function makeVideoFileName(title) {
+  const stem = (title || 'Tadabbur Reminder')
+    .normalize('NFKD').replace(/[^\w -]/g, '').trim().replace(/[\s-]+/g, '_').slice(0, 80) || 'Tadabbur_Reminder';
+  return `${stem}.mp4`;
+}
+
+async function prepareVideoFile(videoId, title, button) {
+  const response = await fetch(`/api/v1/videos/${encodeURIComponent(videoId)}/stream`, { credentials: 'same-origin' });
+  if (response.status !== 200 || !response.ok) throw new Error(`Video download failed (HTTP ${response.status}).`);
+  if (response.redirected) throw new Error('The video endpoint redirected instead of returning the video file.');
+  const contentType = (response.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase();
+  if (contentType !== 'video/mp4') throw new Error('The server did not return an MP4 video. Please try again later.');
+  const declaredSize = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredSize) && declaredSize > MAX_PREPARED_VIDEO_BYTES) {
+    throw new Error('This video is too large to prepare for sharing on this device.');
+  }
+
+  videoShareStatus(button, 'Preparing video for sharing. Keep this page open…');
+  let blob;
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > MAX_PREPARED_VIDEO_BYTES) {
+        await reader.cancel();
+        throw new Error('This video is too large to prepare for sharing on this device.');
+      }
+      chunks.push(value);
+      const progress = declaredSize > 0 ? ` (${Math.min(99, Math.round(received / declaredSize * 100))}%)` : '';
+      videoShareStatus(button, `Preparing video for sharing${progress}…`);
+    }
+    blob = new Blob(chunks, { type: 'video/mp4' });
+  } else {
+    blob = await response.blob();
+  }
+  if (blob.size < 12 || blob.size > MAX_PREPARED_VIDEO_BYTES) throw new Error('The video file is empty or exceeds the sharing size limit.');
+  const header = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  if (String.fromCharCode(...header.slice(4, 8)) !== 'ftyp') throw new Error('The server response is not a valid MP4 video.');
+
+  const file = new File([blob], makeVideoFileName(title), { type: 'video/mp4', lastModified: Date.now() });
+  cachePreparedVideo(videoId, file);
+  return file;
 }
 
 /* ── Static Data: Du'as ────────────────────────────────────────────────── */
@@ -84,20 +147,31 @@ const VERSES = [
 ];
 
 function todayVerse() {
-  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+  const now = new Date();
+  const dayOfYear = Math.floor((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(now.getFullYear(), 0, 0)) / 86400000);
   return VERSES[dayOfYear % VERSES.length];
 }
 
 function todayDua() {
-  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+  const now = new Date();
+  const dayOfYear = Math.floor((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(now.getFullYear(), 0, 0)) / 86400000);
   return DUAS[dayOfYear % DUAS.length];
 }
 
 /* ── Saved/Bookmarks (localStorage) ────────────────────────────────────── */
-function getSaved() {
-  try { return JSON.parse(localStorage.getItem('tadabbur_saved') || '[]'); } catch { return []; }
+function savedStorageKey() {
+  return _currentUser?.id ? `tadabbur_saved_${_currentUser.id}` : null;
 }
-function setSaved(items) { localStorage.setItem('tadabbur_saved', JSON.stringify(items)); }
+
+function getSaved() {
+  const key = savedStorageKey();
+  if (!key) return [];
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+}
+function setSaved(items) {
+  const key = savedStorageKey();
+  if (key) localStorage.setItem(key, JSON.stringify(items));
+}
 function isSaved(type, id) { return getSaved().some(s => s.type === type && s.id === id); }
 function toggleSaved(type, id, title) {
   const saved = getSaved();
@@ -106,6 +180,26 @@ function toggleSaved(type, id, title) {
   else saved.push({ type, id, title });
   setSaved(saved);
   return idx < 0;
+}
+
+function getLegacySaved() {
+  try { return JSON.parse(localStorage.getItem('tadabbur_saved') || '[]'); } catch { return []; }
+}
+
+function importLegacySaved() {
+  const key = savedStorageKey();
+  if (!key) return;
+  const importsKey = `${key}_legacy_imported`;
+  if (localStorage.getItem(importsKey)) return;
+  const existing = getSaved();
+  const legacy = getLegacySaved();
+  const merged = [...existing];
+  for (const item of legacy) {
+    if (!merged.some(saved => saved.type === item.type && saved.id === item.id)) merged.push(item);
+  }
+  setSaved(merged);
+  localStorage.setItem(importsKey, '1');
+  renderSaved(document.getElementById('app'));
 }
 
 /* ── Settings (localStorage) ───────────────────────────────────────────── */
@@ -250,6 +344,27 @@ async function renderActivate(app) {
 }
 
 /* ── Home Screen ───────────────────────────────────────────────────────── */
+async function loadVerseOfDay() {
+  const now = new Date();
+  const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  try {
+    const verse = await API.get(`/content/verse-of-day?date=${encodeURIComponent(localDate)}`, 3600);
+    localStorage.setItem('tadabbur_quran_verse_cache', JSON.stringify({ localDate, verse }));
+    return verse;
+  } catch {
+    try {
+      const cached = JSON.parse(localStorage.getItem('tadabbur_quran_verse_cache') || 'null');
+      if (cached?.localDate === localDate && cached.verse?.arabic && cached.verse?.translation) return cached.verse;
+    } catch {}
+    const fallback = todayVerse();
+    return {
+      verse_key: fallback.ref.replace(/^Qur'an\s+/i, ''),
+      arabic: fallback.arabic,
+      translation: fallback.translation,
+    };
+  }
+}
+
 async function renderHome(app) {
   const user = await getUser();
   if (!user) { navigate('/'); return; }
@@ -257,7 +372,7 @@ async function renderHome(app) {
 
   try {
     const video = await API.get('/reminders/today');
-    const verse = todayVerse();
+    const verse = await loadVerseOfDay();
     app.querySelector('#home-content').innerHTML = `
       <div class="page-header">
         <span class="brand">TADABBUR</span>
@@ -273,15 +388,16 @@ async function renderHome(app) {
           ${video.description ? `<p class="reminder-desc">${escHtml(video.description)}</p>` : ''}
           <div class="reminder-actions">
             <button class="watch-link watch-link-button" onclick="watchVideo(${video.id})" type="button">▶ Watch Reminder</button>
-            <button class="btn btn-primary btn-sm" onclick="shareVideoFile(${video.id}, '${escHtml(video.title).replace(/'/g, "\\'")}')">Share to WhatsApp</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick="shareVideoFile(${video.id}, '${escHtml(video.title).replace(/'/g, "\\'")}', this)">Share video</button>
           </div>
         </div>
       </div>
       <div class="section-title">QUR'AN VERSE OF THE DAY</div>
       <div class="verse-card">
-        <div class="verse-arabic">${verse.arabic}</div>
-        <div class="verse-translation">${verse.translation}</div>
-        <div class="verse-ref">${verse.ref}</div>
+        <div class="verse-arabic" dir="rtl" lang="ar" translate="no">${escHtml(verse.arabic)}</div>
+        <div class="verse-translation" translate="no">${escHtml(verse.translation)}</div>
+        <div class="verse-ref">Qur'an ${escHtml(verse.verse_key)}</div>
+        ${verse.source ? `<div class="verse-attribution">${escHtml(verse.source)}${verse.translation_source ? ` · Translation: ${escHtml(verse.translation_source)}` : ''}</div>` : ''}
         <a href="#/videos" class="verse-link">Read & Reflect →</a>
       </div>`;
   } catch (e) {
@@ -335,7 +451,7 @@ async function renderVideos(app) {
             ${v.duration_seconds ? `<div class="video-duration">Duration: ${fmtDuration(v.duration_seconds)}</div>` : ''}
             <div class="video-actions">
               <button class="watch-link watch-link-button" onclick="watchVideo(${v.id})" type="button">▶ Watch Reminder</button>
-              <button class="btn btn-primary btn-sm" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}')">Share to WhatsApp</button>
+              <button class="btn btn-primary btn-sm" type="button" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}', this)">Share video</button>
             </div>
           </div>
         </div>
@@ -387,7 +503,6 @@ async function renderDuas(app) {
   const categories = ['All', 'Morning', 'Evening', 'Sleep', 'More'];
 
   const duaOfDay = todayDua();
-  const moreDuas = DUAS.filter(d => d.id !== duaOfDay.id);
 
   function pillHtml() {
     return `<div class="pill-row-inner">` + categories.map((c, i) =>
@@ -400,9 +515,16 @@ async function renderDuas(app) {
     const el = app.querySelector('#duas-content');
     if (!el) return;
 
-    let filtered = DUAS;
-    if (_duaCategory !== 'All') filtered = filtered.filter(d => d.category === _duaCategory);
-    if (_duaSearch) filtered = filtered.filter(d => d.title.toLowerCase().includes(_duaSearch.toLowerCase()));
+    const query = _duaSearch.toLocaleLowerCase();
+    const filtered = DUAS.filter(d => {
+      if (['Morning', 'Evening', 'Sleep'].includes(_duaCategory) && d.category !== _duaCategory) return false;
+      if (_duaCategory === 'More' && ['Morning', 'Evening', 'Sleep'].includes(d.category)) return false;
+      if (!query) return true;
+      return [d.title, d.category, d.translation, d.transliteration]
+        .filter(Boolean)
+        .some(value => value.toLocaleLowerCase().includes(query));
+    });
+    const moreDuas = filtered.filter(d => d.id !== duaOfDay.id);
 
     el.innerHTML = `
       <div class="page-header">
@@ -417,11 +539,11 @@ async function renderDuas(app) {
       <div class="pill-row">${pillHtml()}</div>
       <div class="section-title">DU'A OF THE DAY</div>
       <div class="dua-card">
-        <div class="dua-arabic">${duaOfDay.arabic}</div>
-        <div class="dua-translation">${duaOfDay.translation}</div>
+        <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(duaOfDay.arabic)}</div>
+        <div class="dua-translation">${escHtml(duaOfDay.translation)}</div>
         <div class="dua-actions">
-          <button class="btn btn-primary btn-sm">Read Du'a →</button>
-          <button class="btn btn-outline btn-sm" onclick="toggleSaved('dua', '${duaOfDay.id}', '${escHtml(duaOfDay.title).replace(/'/g, "\\'")}'); renderDuas(document.getElementById('app'));">🔖 Save</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="openDuaDetails('${escHtml(duaOfDay.id)}')">Read Du'a →</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="toggleDuaSaved('${escHtml(duaOfDay.id)}')">${isSaved('dua', duaOfDay.id) ? '🔖 Saved' : '🔖 Save'}</button>
         </div>
       </div>
       <div class="section-title">MORE DAILY DU'AS</div>
@@ -429,12 +551,14 @@ async function renderDuas(app) {
         <div class="dua-list-card">
           <div class="dua-icon">${d.icon}</div>
           <div class="dua-list-info">
-            <div class="dua-list-title">${d.title}</div>
-            <div class="dua-list-sub">${d.category}</div>
+            <div class="dua-list-title">${escHtml(d.title)}</div>
+            <div class="dua-list-sub">${escHtml(d.category)}</div>
           </div>
-          <span class="dua-arrow">→</span>
+          <button class="dua-arrow" type="button" aria-label="Read ${escHtml(d.title)}" onclick="openDuaDetails('${escHtml(d.id)}')">→</button>
+          <button class="bookmark-btn" type="button" aria-label="${isSaved('dua', d.id) ? 'Remove saved' : 'Save'} ${escHtml(d.title)}" onclick="toggleDuaSaved('${escHtml(d.id)}')">${isSaved('dua', d.id) ? '🔖' : '♡'}</button>
         </div>
       `).join('')}
+      ${moreDuas.length === 0 ? '<div class="empty-state"><p>No du\'as match this search or category.</p></div>' : ''}
     `;
 
     const searchInput = el.querySelector('#dua-search');
@@ -450,6 +574,37 @@ async function renderDuas(app) {
 
 function setDuaCategory(cat) { _duaCategory = cat; _duaSearch = ''; renderDuas(document.getElementById('app')); }
 
+function toggleDuaSaved(duaId) {
+  const dua = DUAS.find(item => item.id === duaId);
+  if (!dua) return;
+  toggleSaved('dua', dua.id, dua.title);
+  if (window.location.hash === '#/saved') renderSaved(document.getElementById('app'));
+  else renderDuas(document.getElementById('app'));
+}
+
+function openDuaDetails(duaId) {
+  const dua = DUAS.find(item => item.id === duaId);
+  if (!dua) return;
+  document.getElementById('dua-details-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'dua-details-modal';
+  modal.className = 'dua-details-overlay';
+  modal.innerHTML = `
+    <section class="dua-details-dialog" role="dialog" aria-modal="true" aria-labelledby="dua-details-title">
+      <button class="dua-details-close" type="button" aria-label="Close" onclick="document.getElementById('dua-details-modal').remove()">×</button>
+      <div class="dua-list-sub">${escHtml(dua.category)}</div>
+      <h2 id="dua-details-title" class="dua-list-title">${escHtml(dua.title)}</h2>
+      <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(dua.arabic)}</div>
+      <p class="dua-translation">${escHtml(dua.translation)}</p>
+      ${dua.transliteration ? `<p class="dua-transliteration">${escHtml(dua.transliteration)}</p>` : ''}
+      ${dua.source ? `<p class="dua-source">${escHtml(dua.source)}</p>` : '<p class="dua-source">Source details are not available for this entry.</p>'}
+      <button class="btn btn-outline btn-sm" type="button" onclick="toggleDuaSaved('${escHtml(dua.id)}'); openDuaDetails('${escHtml(dua.id)}')">${isSaved('dua', dua.id) ? '🔖 Unsave' : '🔖 Save Du\'a'}</button>
+    </section>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', event => { if (event.target === modal) modal.remove(); });
+  modal.addEventListener('keydown', event => { if (event.key === 'Escape') modal.remove(); });
+}
+
 /* ── Saved Screen ──────────────────────────────────────────────────────── */
 async function renderSaved(app) {
   const user = await getUser();
@@ -460,6 +615,7 @@ async function renderSaved(app) {
   const videoItems = saved.filter(s => s.type === 'video');
   const duaItems = saved.filter(s => s.type === 'dua');
   const duaMap = Object.fromEntries(DUAS.map(d => [d.id, d]));
+  const legacyImportAvailable = getLegacySaved().length > 0 && !localStorage.getItem(`${savedStorageKey()}_legacy_imported`);
 
   function renderList() {
     const el = app.querySelector('#saved-content');
@@ -488,7 +644,8 @@ async function renderSaved(app) {
             <div class="dua-list-title">${escHtml(d.title)}</div>
             ${d.category ? `<div class="dua-list-sub">${d.category}</div>` : ''}
           </div>
-          <button class="bookmark-btn" onclick="toggleSaved('dua', '${s.id}'); renderSaved(document.getElementById('app'));" title="Remove">🔖</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="openDuaDetails('${escHtml(s.id)}')">Read</button>
+          <button class="bookmark-btn" onclick="toggleSaved('dua', '${escHtml(s.id)}'); renderSaved(document.getElementById('app'));" title="Remove">🔖</button>
         </div>
       `;
     }).join('');
@@ -499,6 +656,7 @@ async function renderSaved(app) {
       </div>
       <h1 class="page-title">Your Saved Reminders</h1>
       <p class="page-subtitle">Keep the reminders that matter to you.</p>
+      ${legacyImportAvailable ? `<div class="card legacy-saves-card"><p>This browser has bookmarks from before saves were separated by profile.</p><button class="btn btn-outline btn-sm" type="button" onclick="importLegacySaved()">Import these bookmarks into this profile</button></div>` : ''}
       <div class="pill-row">
         <div class="pill-row-inner">
           <button class="pill active">All</button>
@@ -623,54 +781,129 @@ function watchVideo(videoId) {
         <div style="font-weight:800;font-size:1.1rem;margin-bottom:4px;">${escHtml(v.title)}</div>
         ${v.description ? `<div style="font-size:.85rem;color:var(--color-muted);margin-bottom:12px;">${escHtml(v.description)}</div>` : ''}
         ${v.duration_seconds ? `<div style="font-size:.8rem;color:var(--color-muted);">Duration: ${fmtDuration(v.duration_seconds)}</div>` : ''}
-        <button class="btn btn-primary btn-sm" style="margin-top:12px;width:100%;" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}'); document.getElementById('video-modal').remove();">Share to WhatsApp</button>
+        <div class="video-actions" style="margin-top:12px;"><button class="btn btn-primary btn-sm" style="width:100%;" type="button" onclick="shareVideoFile(${v.id}, '${escHtml(v.title).replace(/'/g, "\\'")}', this)">Share video</button></div>
       `;
     }
   }).catch(() => {});
 
-  // Warm the file cache without blocking playback or the user's click gesture.
-  cacheVideoBlob(videoId).catch(() => {});
 }
 
 /* ── Share ─────────────────────────────────────────────────────────────── */
-async function shareVideoFile(videoId, title) {
-  const shareUrl = videoStreamUrl(videoId);
-  const shareText = `${title || 'Tadabbur Reminder'}\n${shareUrl}`;
-  let cachedBlob = _videoCache.get(videoId);
-
-  try {
-    if (cachedBlob && navigator.share) {
-      const safeTitle = (title || 'reminder').replace(/[^a-zA-Z0-9]/g, '_');
-      const file = new File([cachedBlob], `${safeTitle}.mp4`, { type: 'video/mp4' });
-      if (!navigator.canShare || navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: title || 'Tadabbur Reminder', text: 'Reflect on this reminder.' });
-      } else {
-        throw new Error('File sharing is not supported on this device.');
-      }
-    } else if (navigator.share) {
-      // Preserve the click gesture: awaiting a blob download here breaks Web Share.
-      await navigator.share({ title: title || 'Tadabbur Reminder', text: shareText, url: shareUrl });
-    } else {
-      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
-    }
-    await API.post(`/videos/${videoId}/share`);
-    if (window.confirm('Did you post this reminder to WhatsApp?')) {
-      await API.post(`/videos/${videoId}/posted`);
-    }
-    return true;
-  } catch (e) {
-    if (e.name === 'AbortError') return false;
-    if (!cachedBlob && e.name === 'NotAllowedError') {
-      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
-      await API.post(`/videos/${videoId}/share`);
-      if (window.confirm('Did you post this reminder to WhatsApp?')) {
-        await API.post(`/videos/${videoId}/posted`);
-      }
-      return true;
-    }
-    console.error('Unable to share video', e);
+async function sharePreparedVideo(videoId, title, button, file) {
+  if (!navigator.share) {
+    button.dataset.shareDownload = 'true';
+    button.textContent = 'Download video';
+    videoShareStatus(button, 'This browser cannot share video files. Tap “Download video” to save the MP4 and share it manually.');
     return false;
   }
+  if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+    button.dataset.shareDownload = 'true';
+    button.textContent = 'Download video';
+    videoShareStatus(button, 'This device cannot share video files here. Tap “Download video” to save the MP4 and share it manually.');
+    return false;
+  }
+
+  // Call Web Share synchronously in this click handler before the first await.
+  let sharePromise;
+  try {
+    sharePromise = navigator.share({ files: [file] });
+  } catch (error) {
+    sharePromise = Promise.reject(error);
+  }
+  try {
+    await sharePromise;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      videoShareStatus(button, 'Share cancelled. Your video has not been marked as posted.');
+      return false;
+    }
+    console.error('Unable to share video file', error);
+    if (error?.name === 'TypeError') {
+      button.dataset.shareDownload = 'true';
+      button.textContent = 'Download video';
+      videoShareStatus(button, 'This browser cannot share video files here. Tap “Download video” to save the MP4 and share it manually.');
+      return false;
+    }
+    const message = error?.name === 'NotAllowedError'
+      ? 'The share action expired. Tap “Share video now” to try again.'
+      : `Unable to share this video${error?.message ? `: ${error.message}` : '. Please try again.'}`;
+    videoShareStatus(button, message, true);
+    return false;
+  }
+
+  videoShareStatus(button, 'The share sheet finished. Complete posting in WhatsApp if you want to share to Status.');
+  try {
+    await API.post(`/videos/${encodeURIComponent(videoId)}/share`);
+  } catch (error) {
+    console.error('Video was shared but share activity could not be recorded', error);
+    videoShareStatus(button, 'The share sheet finished, but Tadabbur could not save this activity. Complete posting in WhatsApp if desired.', true);
+  }
+  return true;
+}
+
+function downloadPreparedVideo(videoId, button) {
+  const cached = _videoCache.get(videoId);
+  if (!cached) {
+    button.dataset.shareDownload = '';
+    button.textContent = 'Share video';
+    videoShareStatus(button, 'The prepared video is no longer available. Tap Share video to prepare it again.', true);
+    return;
+  }
+  const objectUrl = URL.createObjectURL(cached.file);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = cached.file.name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  videoShareStatus(button, 'MP4 download started. Share the downloaded video manually.');
+}
+
+async function shareVideoFile(videoId, title, button) {
+  if (!button) return false;
+  if (button.dataset.shareDownload === 'true') {
+    downloadPreparedVideo(videoId, button);
+    return false;
+  }
+
+  let cached = _videoCache.get(videoId);
+  if (cached) {
+    // Refresh insertion order to keep the most recently used file in cache.
+    _videoCache.delete(videoId);
+    _videoCache.set(videoId, cached);
+    if (!navigator.share || (navigator.canShare && !navigator.canShare({ files: [cached.file] }))) {
+      button.dataset.shareDownload = 'true';
+      button.textContent = 'Download video';
+      videoShareStatus(button, 'File sharing is unsupported here. Tap “Download video” to save the MP4 and share it manually.');
+      return false;
+    }
+    button.textContent = 'Share video now';
+    return sharePreparedVideo(videoId, title, button, cached.file);
+  }
+
+  button.disabled = true;
+  button.textContent = 'Preparing video…';
+  videoShareStatus(button, 'Preparing the actual MP4 video first. You will need to tap “Share video now” once it is ready.');
+  try {
+    const file = await prepareVideoFile(videoId, title, button);
+    // Keep the final native share action on its own, fresh user tap.
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      button.textContent = 'Share video now';
+      button.dataset.shareDownload = '';
+      videoShareStatus(button, 'Video ready. Tap “Share video now” to send the MP4 to the native share sheet.');
+    } else {
+      button.disabled = false;
+      button.dataset.shareDownload = 'true';
+      button.textContent = 'Download video';
+      videoShareStatus(button, 'Video ready. This browser cannot share video files; tap “Download video” to save the MP4 and share it manually.');
+    }
+  } catch (error) {
+    console.error('Unable to prepare video file', error);
+    button.textContent = 'Try again';
+    videoShareStatus(button, `${error?.message || 'Unable to prepare this video.'} Tap to try again.`, true);
+  } finally {
+    button.disabled = false;
+  }
+  return false;
 }
 
 /* ── History / Progress / Profile / Admin (preserved) ──────────────────── */

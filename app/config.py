@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     google_drive_root_folder_id: str = ""
     vercel_cron_secret: str = ""
 
+    # Quran Foundation Content API (optional; Du'a records are not provided)
+    qf_client_id: str = ""
+    qf_client_secret: str = ""
+    qf_env: Literal["prelive", "production"] = "prelive"
+    qf_translation_id: str = "131"
+
     # Reminder
     recent_exclusion_limit: int = 7
 

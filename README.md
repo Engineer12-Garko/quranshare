@@ -8,7 +8,7 @@ A curated Quranic/Islamic reminder video library with WhatsApp sharing.
 - **Database:** PostgreSQL
 - **Storage:** Google Drive (MP4s)
 - **Auth:** Argon2id passwords, HTTP-only signed session cookies
-- **Sharing:** Web Share API / wa.me fallback
+- **Sharing:** Prepared MP4 file through the Web Share API, with an explicit MP4 download option where file sharing is unsupported
 
 ## Quick Start
 
@@ -102,3 +102,17 @@ Set up (once):
 
 Curators/admins can still run a manual sync via
 `POST /api/v1/admin/sync/google-drive`.
+
+## Quran Foundation Content
+
+The optional Quran Foundation Content API integration supplies the Qur'an
+verse of the day through `GET /api/v1/content/verse-of-day`. Configure
+`QF_CLIENT_ID`, `QF_CLIENT_SECRET`, `QF_ENV` (`prelive` or `production`), and
+`QF_TRANSLATION_ID` in the server environment. The client secret stays on the
+backend; the backend obtains and caches OAuth2 Content API tokens.
+
+The Content API serves Qur'an content and translations, not a daily Du'a
+collection. The Du'as screen therefore continues to use the three existing
+local entries. Their source metadata is not present in this repository; the
+details view says so instead of inventing references. Add further Du'as only
+from a reviewed, appropriately licensed dataset with traceable source details.

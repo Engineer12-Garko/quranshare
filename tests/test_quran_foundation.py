@@ -1,0 +1,121 @@
+from datetime import date
+from unittest.mock import Mock, patch
+
+import pytest
+import requests
+
+from app.config import settings
+from app.services import quran_foundation as qf
+
+
+@pytest.fixture(autouse=True)
+def reset_qf_cache(monkeypatch):
+    qf._token_value = None
+    qf._token_expires_at = 0
+    qf._daily_cache.clear()
+    monkeypatch.setattr(settings, "qf_client_id", "test-client")
+    monkeypatch.setattr(settings, "qf_client_secret", "test-secret")
+    monkeypatch.setattr(settings, "qf_env", "prelive")
+    monkeypatch.setattr(settings, "qf_translation_id", "131")
+    yield
+    qf._token_value = None
+    qf._token_expires_at = 0
+    qf._daily_cache.clear()
+
+
+def response(status=200, payload=None, headers=None):
+    result = Mock()
+    result.status_code = status
+    result.headers = headers or {}
+    result.json.return_value = payload or {}
+    if status >= 400:
+        result.raise_for_status.side_effect = requests.HTTPError(f"HTTP {status}")
+    return result
+
+
+def test_token_uses_documented_oauth_scope_and_is_cached():
+    token_response = response(payload={"access_token": "token-1", "expires_in": 3600})
+    with patch.object(qf.requests, "post", return_value=token_response) as post:
+        assert qf._get_access_token() == "token-1"
+        assert qf._get_access_token() == "token-1"
+
+    assert post.call_count == 1
+    assert post.call_args.kwargs["data"] == {"grant_type": "client_credentials", "scope": "content"}
+    assert post.call_args.args[0] == "https://prelive-oauth2.quran.foundation/oauth2/token"
+
+
+def test_expired_token_is_renewed():
+    qf._token_value = "expired-token"
+    qf._token_expires_at = 0
+    with patch.object(qf.requests, "post", return_value=response(payload={"access_token": "new-token"})) as post:
+        assert qf._get_access_token() == "new-token"
+    assert post.call_count == 1
+
+
+def test_verse_response_maps_documented_fields_and_retries_one_401():
+    token_responses = [
+        response(payload={"access_token": "token-1", "expires_in": 3600}),
+        response(payload={"access_token": "token-2", "expires_in": 3600}),
+    ]
+    verse_response = response(payload={"verse": {
+        "verse_key": "2:152",
+        "text_uthmani": "فَاذْكُرُونِي أَذْكُرْكُمْ",
+        "translations": [{"resource_id": 131, "resource_name": "Clear Quran", "text": "Remember Me; I will remember you."}],
+    }})
+    with patch.object(qf.requests, "post", side_effect=token_responses) as post, \
+         patch.object(qf.requests, "get", side_effect=[response(401), verse_response]) as get:
+        result = qf._fetch_verse("2:152")
+
+    assert result == {
+        "verse_key": "2:152",
+        "arabic": "فَاذْكُرُونِي أَذْكُرْكُمْ",
+        "translation": "Remember Me; I will remember you.",
+        "translation_source": "Clear Quran",
+        "source": "Quran Foundation Content API",
+    }
+    assert post.call_count == 2
+    assert get.call_count == 2
+    assert get.call_args.kwargs["headers"] == {"x-auth-token": "token-2", "x-client-id": "test-client"}
+    assert get.call_args.kwargs["params"]["translations"] == "131"
+
+
+def test_transient_timeout_is_retried_once_then_reported(monkeypatch):
+    monkeypatch.setattr(qf.time, "sleep", lambda _: None)
+    with patch.object(qf.requests, "post", return_value=response(payload={"access_token": "token"})), \
+         patch.object(qf.requests, "get", side_effect=requests.Timeout("timeout")) as get:
+        with pytest.raises(qf.QuranFoundationError):
+            qf._fetch_verse("20:114")
+    assert get.call_count == 2
+
+
+@pytest.mark.parametrize("status_code", [429, 503])
+def test_rate_limit_and_server_errors_get_one_bounded_retry(monkeypatch, status_code):
+    monkeypatch.setattr(qf.time, "sleep", lambda _: None)
+    qf._token_value = "cached-token"
+    qf._token_expires_at = qf.time.monotonic() + 3600
+    valid_verse = response(payload={"verse": {
+        "verse_key": "1:1",
+        "text_uthmani": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+        "translations": [{"resource_id": 131, "resource_name": "Clear Quran", "text": "In the name of Allah."}],
+    }})
+    with patch.object(qf.requests, "get", side_effect=[response(status_code, headers={"Retry-After": "0"}), valid_verse]) as get:
+        assert qf._fetch_verse("1:1")["verse_key"] == "1:1"
+    assert get.call_count == 2
+
+
+def test_forbidden_response_is_not_retried():
+    qf._token_value = "cached-token"
+    qf._token_expires_at = qf.time.monotonic() + 3600
+    with patch.object(qf.requests, "get", return_value=response(403)) as get:
+        with pytest.raises(qf.QuranFoundationError):
+            qf._fetch_verse("1:1")
+    get.assert_called_once()
+
+
+def test_daily_verse_is_stable_and_cached_for_the_date():
+    with patch.object(qf, "_fetch_verse", return_value={"verse_key": "94:6", "arabic": "Arabic", "translation": "Ease follows hardship."}) as fetch:
+        first = qf.get_verse_of_day(date(2026, 10, 17))
+        second = qf.get_verse_of_day(date(2026, 10, 17))
+    assert first == second
+    assert first["date"] == "2026-10-17"
+    fetch.assert_called_once()

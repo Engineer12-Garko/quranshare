@@ -9,6 +9,7 @@ from app.config import settings
 from app.routes.admin import router as admin_router
 from app.routes.auth import router as auth_router
 from app.routes.categories import router as categories_router
+from app.routes.content import router as content_router
 from app.routes.health import router as health_router
 from app.routes.history import router as history_router
 from app.routes.progress import router as progress_router
@@ -43,6 +44,7 @@ app.include_router(auth_router,       prefix="/api/v1")
 app.include_router(users_router,      prefix="/api/v1")
 app.include_router(videos_router,     prefix="/api/v1")
 app.include_router(categories_router, prefix="/api/v1")
+app.include_router(content_router,   prefix="/api/v1")
 app.include_router(reminder_router,   prefix="/api/v1")
 app.include_router(history_router,    prefix="/api/v1")
 app.include_router(progress_router,   prefix="/api/v1")

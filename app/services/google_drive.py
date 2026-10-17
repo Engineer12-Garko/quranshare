@@ -174,14 +174,14 @@ def _parse_range(range_header: str, file_size: int) -> tuple[int, int]:
             end = int(end_str) if end_str else file_size - 1
     except (ValueError, AttributeError):
         raise HTTPException(
-            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
             detail="Invalid Range header.",
             headers={"Content-Range": f"bytes */{file_size}"},
         )
     end = min(end, file_size - 1)
     if start > end or start < 0 or start >= file_size:
         raise HTTPException(
-            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE,
             detail="Unsatisfiable range.",
             headers={"Content-Range": f"bytes */{file_size}"},
         )
