@@ -792,6 +792,11 @@ function setVideoCategory(cat, categoryId) {
 let _duaCategory = 'All';
 let _duaSearch = '';
 let _liveDuaItems = null;
+let _duaSearchPage = 1;
+let _duaSearchItems = [];
+let _duaSearchHasMore = false;
+let _duaSearchError = null;
+let _duaSearchTimer = null;
 
 async function renderDuas(app) {
   const user = await getUser();
@@ -799,11 +804,31 @@ async function renderDuas(app) {
   const generation = ++_duaRenderGeneration;
   app.innerHTML = `${navHtml('#/duas')}<div class="page" id="duas-content"><div class="empty-state"><p>Loading...</p></div></div>`;
 
-  let liveDuas;
-  let duaOfDay;
+  const el = app.querySelector('#duas-content');
+  const query = _duaSearch.trim();
+  const renderSearchShell = (body) => {
+    el.innerHTML = `
+      <div class="page-header"><span class="brand">TADABBUR</span></div>
+      <h1 class="page-title">Daily Du'as</h1>
+      <p class="page-subtitle">Supplications For Everyday</p>
+      <div class="search-wrap">
+        <span class="search-icon material-symbols-outlined">search</span>
+        <input id="dua-search" class="search-input" type="text" placeholder="Search du'as..." value="${escHtml(_duaSearch)}" />
+        ${_duaSearch ? '<button id="dua-search-clear" class="search-clear" type="button" aria-label="Clear search">×</button>' : ''}
+      </div>
+      <div id="dua-view-body">${body}</div>`;
+    bindDuaSearch(el, app);
+  };
+  const searchBody = (content) => `<div class="section-title">SEARCH RESULTS</div>${content}`;
+
+  if (query) {
+    renderSearchShell(searchBody('<div class="empty-state" role="status"><p>Searching Du’as…</p></div>'));
+    await loadDuaSearch(app, generation, query, 1);
+    return;
+  }
+
   try {
     const queryParts = [];
-    if (_duaSearch) queryParts.push(`search=${encodeURIComponent(_duaSearch)}`);
     if (_duaCategory !== 'All' && _duaCategory !== 'More') queryParts.push(`category=${encodeURIComponent(_duaCategory)}`);
     queryParts.push('page=1', 'limit=20');
     const [searchResult, daily] = await Promise.all([
@@ -812,47 +837,32 @@ async function renderDuas(app) {
     ]);
     if (generation !== _duaRenderGeneration) return;
     if (!searchResult || !Array.isArray(searchResult.items)) throw new Error('The live Du\'a response was invalid.');
-    liveDuas = searchResult.items.map(item => ({ ...item, icon: '📖' }));
-    duaOfDay = daily;
+    const liveDuas = searchResult.items.map(item => ({ ...item, icon: '📖' }));
     _liveDuaDaily = daily;
     _liveDuaItems = liveDuas;
   } catch (error) {
     if (generation !== _duaRenderGeneration) return;
     console.error('Unable to load live Du\'as', error);
-    liveDuas = DUAS;
-    duaOfDay = todayDua();
     _liveDuaDaily = null;
     _liveDuaItems = null;
+    renderSearchShell(`<div class="empty-state error-state" role="alert"><p>Unable to load Du’as right now.</p><button class="btn btn-outline btn-sm" type="button" id="dua-retry">Retry</button></div>`);
+    el.querySelector('#dua-retry')?.addEventListener('click', () => renderDuas(app));
+    return;
   }
   if (generation !== _duaRenderGeneration) return;
 
-  const categories = _liveDuaItems
-    ? ['All', ...[...new Set(liveDuas.map(d => d.category).filter(Boolean))].slice(0, 5)]
-    : ['All', 'Morning', 'Evening', 'Sleep', 'More'];
-
-  function pillHtml() {
-    return `<div class="pill-row-inner">` + categories.map((c, i) =>
-      (i > 0 ? '<span class="pill-divider">|</span>' : '') +
-      `<button class="pill ${_duaCategory === c ? 'active' : ''}" onclick="setDuaCategory('${c}')">${c}</button>`
-    ).join('') + `</div>`;
-  }
-
-  function renderList() {
-    const el = app.querySelector('#duas-content');
-    if (!el) return;
-
-    const query = _liveDuaItems ? '' : _duaSearch.toLocaleLowerCase();
-    const filtered = liveDuas.filter(d => {
-      if (!_liveDuaItems && ['Morning', 'Evening', 'Sleep'].includes(_duaCategory) && d.category !== _duaCategory) return false;
-      if (!_liveDuaItems && _duaCategory === 'More' && ['Morning', 'Evening', 'Sleep'].includes(d.category)) return false;
-      if (!query) return true;
-      return [d.title, d.category, d.translation, d.transliteration]
-        .filter(Boolean)
-        .some(value => value.toLocaleLowerCase().includes(query));
-    });
-    const moreDuas = filtered.filter(d => d.id !== duaOfDay.id);
-
-    el.innerHTML = `
+  const categories = ['All', ...[...new Set(_liveDuaItems.map(d => d.category).filter(Boolean))].slice(0, 5)];
+  const pillHtml = () => `<div class="pill-row-inner">` + categories.map((c, i) =>
+    (i > 0 ? '<span class="pill-divider">|</span>' : '') +
+    `<button class="pill ${_duaCategory === c ? 'active' : ''}" onclick="setDuaCategory('${c}')">${c}</button>`
+  ).join('') + `</div>`;
+  const moreDuas = _liveDuaItems.filter(d => {
+    if (d.id === _liveDuaDaily.id) return false;
+    if (_duaCategory === 'More') return !['Morning', 'Evening', 'Sleep'].includes(d.category);
+    if (_duaCategory !== 'All') return d.category === _duaCategory;
+    return true;
+  });
+  el.innerHTML = `
       <div class="page-header">
         <span class="brand">TADABBUR</span>
       </div>
@@ -866,12 +876,12 @@ async function renderDuas(app) {
       <div class="pill-row">${pillHtml()}</div>
       <div class="section-title">DU'A OF THE DAY</div>
       <div class="dua-card">
-        <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(duaOfDay.arabic)}</div>
-        <div class="dua-translation">${escHtml(duaOfDay.translation || 'Open the entry to read its translation.')}</div>
-        ${duaOfDay.source ? `<div class="dua-source">${escHtml(duaOfDay.source)}</div>` : ''}
+        <div class="dua-arabic" dir="rtl" lang="ar" translate="no">${escHtml(_liveDuaDaily.arabic)}</div>
+        <div class="dua-translation">${escHtml(_liveDuaDaily.translation || 'Open the entry to read its translation.')}</div>
+        ${_liveDuaDaily.source ? `<div class="dua-source">${escHtml(_liveDuaDaily.source)}</div>` : ''}
         <div class="dua-actions">
-          <button class="btn btn-primary btn-sm" type="button" onclick="openDuaDetails('${escHtml(duaOfDay.id)}')">Read Du'a →</button>
-          <button class="btn btn-outline btn-sm" type="button" onclick="toggleDuaSaved('${escHtml(duaOfDay.id)}')">${isSaved('dua', duaOfDay.id) ? '🔖 Saved' : '🔖 Save'}</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="openDuaDetails('${escHtml(_liveDuaDaily.id)}')">Read Du'a →</button>
+          <button class="btn btn-outline btn-sm" type="button" onclick="toggleDuaSaved('${escHtml(_liveDuaDaily.id)}')">${isSaved('dua', _liveDuaDaily.id) ? '🔖 Saved' : '🔖 Save'}</button>
         </div>
       </div>
       <div class="section-title">MORE DAILY DU'AS</div>
@@ -886,25 +896,65 @@ async function renderDuas(app) {
           <button class="bookmark-btn" type="button" aria-label="${isSaved('dua', d.id) ? 'Remove saved' : 'Save'} ${escHtml(d.title)}" onclick="toggleDuaSaved('${escHtml(d.id)}')">${isSaved('dua', d.id) ? '🔖' : '♡'}</button>
         </div>
       `).join('')}
-      ${moreDuas.length === 0 ? '<div class="empty-state"><p>No du\'as match this search or category.</p></div>' : ''}
     `;
-
-    const searchInput = el.querySelector('#dua-search');
-    let searchTimer;
-    searchInput.addEventListener('input', e => {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { _duaSearch = e.target.value.trim(); renderDuas(app); }, 350);
-    });
-    el.querySelector('#dua-search-clear')?.addEventListener('click', () => {
-      _duaSearch = '';
-      renderDuas(app);
-    });
-  }
-
-  renderList();
+  bindDuaSearch(el, app);
 }
 
-function setDuaCategory(cat) { _duaCategory = cat; _duaSearch = ''; return renderDuas(document.getElementById('app')); }
+function bindDuaSearch(el, app) {
+  const searchInput = el.querySelector('#dua-search');
+  searchInput?.addEventListener('input', event => {
+    _duaSearch = event.target.value.trim();
+    clearTimeout(_duaSearchTimer);
+    const body = el.querySelector('#dua-view-body') || el.querySelector('#duas-content');
+    if (_duaSearch && body) body.innerHTML = '<div class="section-title">SEARCH RESULTS</div><div class="empty-state" role="status"><p>Searching Du’as…</p></div>';
+    _duaSearchTimer = setTimeout(() => {
+      _duaSearchPage = 1;
+      _duaSearchItems = [];
+      _duaSearchError = null;
+      renderDuas(app);
+    }, 350);
+  });
+  el.querySelector('#dua-search-clear')?.addEventListener('click', () => {
+    clearTimeout(_duaSearchTimer);
+    _duaSearch = '';
+    _duaSearchPage = 1;
+    _duaSearchItems = [];
+    _duaSearchError = null;
+    renderDuas(app);
+  });
+}
+
+async function loadDuaSearch(app, generation, query, page) {
+  try {
+    const result = await API.get(`/duas?search=${encodeURIComponent(query)}&page=${page}&limit=20`, 900);
+    if (generation !== _duaRenderGeneration || query !== _duaSearch.trim()) return;
+    if (!result || !Array.isArray(result.items)) throw new Error('The live Du’a search response was invalid.');
+    _duaSearchItems = page === 1 ? result.items : _duaSearchItems.concat(result.items);
+    _duaSearchPage = page;
+    _duaSearchHasMore = Boolean(result.has_more);
+    _duaSearchError = null;
+    const body = app.querySelector('#dua-view-body');
+    if (!body) return;
+    const items = _duaSearchItems.map(d => `
+      <div class="dua-list-card">
+        <div class="dua-icon">📖</div>
+        <div class="dua-list-info"><div class="dua-list-title">${escHtml(d.title)}</div><div class="dua-list-sub">${escHtml(d.category || d.source_reference || 'OpenDua')}</div></div>
+        <button class="dua-arrow" type="button" aria-label="Read ${escHtml(d.title)}" onclick="openDuaDetails('${escHtml(d.id)}')">→</button>
+        <button class="bookmark-btn" type="button" aria-label="${isSaved('dua', d.id) ? 'Remove saved' : 'Save'} ${escHtml(d.title)}" onclick="toggleDuaSaved('${escHtml(d.id)}')">${isSaved('dua', d.id) ? '🔖' : '♡'}</button>
+      </div>`).join('');
+    body.innerHTML = `<div class="section-title">SEARCH RESULTS</div>${items || `<div class="empty-state"><p>No Du’as found for ‘${escHtml(query)}’.</p></div>`}${_duaSearchHasMore ? '<button id="dua-search-more" class="btn btn-outline btn-sm" type="button">Load more results</button>' : ''}`;
+    body.querySelector('#dua-search-more')?.addEventListener('click', () => loadDuaSearch(app, generation, query, _duaSearchPage + 1));
+  } catch (error) {
+    if (generation !== _duaRenderGeneration || query !== _duaSearch.trim()) return;
+    _duaSearchError = error;
+    const body = app.querySelector('#dua-view-body');
+    if (!body) return;
+    body.innerHTML = `<div class="section-title">SEARCH RESULTS</div><div class="empty-state error-state" role="alert"><p>Unable to search Du’as right now.</p><button class="btn btn-outline btn-sm" type="button" id="dua-search-retry">Retry</button></div>`;
+    body.querySelector('#dua-search-retry')?.addEventListener('click', () => loadDuaSearch(app, generation, query, _duaSearchPage || 1));
+  }
+}
+
+function setDuaCategory(cat) { _duaCategory = cat; _duaSearch = ''; _duaSearchPage = 1; _duaSearchItems = []; return renderDuas(document.getElementById('app')); }
 
 function toggleDuaSaved(duaId) {
   const dua = (_liveDuaItems?.find(item => item.id === duaId) || (_liveDuaDaily?.id === duaId ? _liveDuaDaily : null) || DUAS.find(item => item.id === duaId));
