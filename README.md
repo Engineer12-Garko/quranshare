@@ -106,10 +106,25 @@ Curators/admins can still run a manual sync via
 ## Quran Foundation Content
 
 The optional Quran Foundation Content API integration supplies the Qur'an
-verse of the day through `GET /api/v1/content/verse-of-day`. Configure
+reader and verse of the day through these backend routes:
+
+- `GET /api/v1/content/chapters`
+- `GET /api/v1/content/chapters/{chapter_number}/verses?page=1&per_page=50`
+- `GET /api/v1/content/verses/by-key/{chapter:verse}`
+- `GET /api/v1/content/verse-of-day`
+
+Configure
 `QF_CLIENT_ID`, `QF_CLIENT_SECRET`, `QF_ENV` (`prelive` or `production`), and
 `QF_TRANSLATION_ID` in the server environment. The client secret stays on the
-backend; the backend obtains and caches OAuth2 Content API tokens.
+backend; the backend obtains and caches OAuth2 Content API tokens. Prelive is
+limited to Al-Fatihah and Al-Baqarah; the app filters the chapter picker to
+those chapters and selects the daily verse only from content available in the
+configured environment. Production credentials expose production resources.
+Choose the translation resource ID enabled for that environment (for example,
+the project default `85` in Prelive); IDs must be verified against
+`/content/api/v4/resources/translations?language=en` for the active environment.
+The client caches chapter metadata and daily content in memory; browser requests
+also use bounded GET caching. Arabic text is marked RTL and `notranslate`.
 
 The Content API serves Qur'an content and translations, not a daily Du'a
 collection. The Du'as screen therefore continues to use the three existing

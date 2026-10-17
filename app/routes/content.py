@@ -1,16 +1,61 @@
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Path, Query, Response, status
 
-from app.schemas.quran import VerseOfDayResponse
-from app.services.quran_foundation import QuranFoundationError, get_verse_of_day
+from app.schemas.quran import ChapterResponse, ChapterVersesResponse, VerseOfDayResponse, VerseResponse
+from app.services.quran_foundation import (
+    QuranFoundationError, get_chapter_verses, get_chapters, get_verse_by_key, get_verse_of_day,
+)
 
 router = APIRouter(prefix="/content", tags=["content"])
 
 
+def _service_error(exc: QuranFoundationError) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Quran content is temporarily unavailable.", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/chapters", response_model=list[ChapterResponse])
+def chapters(response: Response):
+    try:
+        result = get_chapters()
+    except QuranFoundationError as exc:
+        raise _service_error(exc) from exc
+    response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+    return result
+
+
+@router.get("/chapters/{chapter_number}/verses", response_model=ChapterVersesResponse)
+def chapter_verses(
+    response: Response,
+    chapter_number: int = Path(ge=1, le=114),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=50),
+):
+    try:
+        result = get_chapter_verses(chapter_number, page, per_page)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QuranFoundationError as exc:
+        raise _service_error(exc) from exc
+    response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+    return result
+
+
+@router.get("/verses/by-key/{verse_key}", response_model=VerseResponse)
+def verse_by_key(verse_key: str, response: Response):
+    try:
+        verse = get_verse_by_key(verse_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except QuranFoundationError as exc:
+        raise _service_error(exc) from exc
+    response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+    return verse
+
+
 @router.get("/verse-of-day", response_model=VerseOfDayResponse)
 def verse_of_day(response: Response, requested_date: date | None = Query(default=None, alias="date")):
-    """Return today's stable Quran Foundation verse and translation."""
     try:
         verse = get_verse_of_day(requested_date)
     except QuranFoundationError as exc:
@@ -19,6 +64,5 @@ def verse_of_day(response: Response, requested_date: date | None = Query(default
             detail="Quran verse content is temporarily unavailable.",
             headers={"Cache-Control": "no-store"},
         ) from exc
-
     response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
     return verse

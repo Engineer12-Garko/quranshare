@@ -13,6 +13,7 @@ def reset_qf_cache(monkeypatch):
     qf._token_value = None
     qf._token_expires_at = 0
     qf._daily_cache.clear()
+    qf._chapters_cache = None
     monkeypatch.setattr(settings, "qf_client_id", "test-client")
     monkeypatch.setattr(settings, "qf_client_secret", "test-secret")
     monkeypatch.setattr(settings, "qf_env", "prelive")
@@ -21,6 +22,7 @@ def reset_qf_cache(monkeypatch):
     qf._token_value = None
     qf._token_expires_at = 0
     qf._daily_cache.clear()
+    qf._chapters_cache = None
 
 
 def response(status=200, payload=None, headers=None):
@@ -66,13 +68,10 @@ def test_verse_response_maps_documented_fields_and_retries_one_401():
          patch.object(qf.requests, "get", side_effect=[response(401), verse_response]) as get:
         result = qf._fetch_verse("2:152")
 
-    assert result == {
-        "verse_key": "2:152",
-        "arabic": "فَاذْكُرُونِي أَذْكُرْكُمْ",
-        "translation": "Remember Me; I will remember you.",
-        "translation_source": "Clear Quran",
-        "source": "Quran Foundation Content API",
-    }
+    assert result["verse_key"] == "2:152"
+    assert result["arabic"] == "فَاذْكُرُونِي أَذْكُرْكُمْ"
+    assert result["translation"] == "Remember Me; I will remember you."
+    assert result["translation_source"] == "Clear Quran"
     assert post.call_count == 2
     assert get.call_count == 2
     assert get.call_args.kwargs["headers"] == {"x-auth-token": "token-2", "x-client-id": "test-client"}
@@ -113,9 +112,38 @@ def test_forbidden_response_is_not_retried():
 
 
 def test_daily_verse_is_stable_and_cached_for_the_date():
-    with patch.object(qf, "_fetch_verse", return_value={"verse_key": "94:6", "arabic": "Arabic", "translation": "Ease follows hardship."}) as fetch:
+    chapters = [{"id": 1, "name_simple": "Al-Fatihah", "name_arabic": "الفاتحة", "verses_count": 1}]
+    verses = [{"verse_key": "1:1", "chapter_id": 1, "verse_number": 1, "arabic": "Arabic", "translation": "Ease follows hardship."}]
+    with patch.object(qf, "get_chapters", return_value=chapters), \
+         patch.object(qf, "get_chapter_verses", return_value={"verses": verses}) as fetch:
         first = qf.get_verse_of_day(date(2026, 10, 17))
         second = qf.get_verse_of_day(date(2026, 10, 17))
     assert first == second
     assert first["date"] == "2026-10-17"
     fetch.assert_called_once()
+
+
+def test_chapter_verses_maps_api_envelope_and_pagination():
+    qf._chapters_cache = (qf.time.monotonic() + 3600, [{"id": 1, "name_simple": "Al-Fatihah", "name_arabic": "الفاتحة", "verses_count": 7, "translated_name": "The Opening"}])
+    qf._token_value = "cached-token"
+    qf._token_expires_at = qf.time.monotonic() + 3600
+    payload = {"verses": [{"verse_key": "1:1", "chapter_id": 1, "verse_number": 1, "text_uthmani": "بِسْمِ اللَّهِ", "translations": [{"resource_id": 131, "resource_name": "Clear Quran", "text": "In the name of Allah."}]}], "pagination": {"current_page": 1, "next_page": 2, "total_pages": 2, "total_records": 7}}
+    with patch.object(qf.requests, "get", return_value=response(payload=payload)) as get:
+        result = qf.get_chapter_verses(1, page=1, per_page=5)
+    assert result["verses"][0]["verse_key"] == "1:1"
+    assert result["verses"][0]["chapter_name"] == "Al-Fatihah"
+    assert result["pagination"]["next_page"] == 2
+    assert get.call_args.kwargs["params"] == {"translations": "131", "fields": "text_uthmani", "translation_fields": "resource_name", "page": 1, "per_page": 5}
+
+
+def test_pre_live_chapter_list_filters_to_available_content():
+    qf._token_value = "cached-token"
+    qf._token_expires_at = qf.time.monotonic() + 3600
+    payload = {"chapters": [{"id": i, "name_simple": f"Surah {i}", "name_arabic": "سورة", "verses_count": 7, "translated_name": {"name": "Name"}} for i in (1, 2, 3)]}
+    with patch.object(qf.requests, "get", return_value=response(payload=payload)):
+        assert [chapter["id"] for chapter in qf.get_chapters()] == [1, 2]
+
+
+def test_missing_configured_translation_is_not_silently_substituted():
+    with pytest.raises(ValueError, match="configured translation"):
+        qf._map_verse({"verse_key": "1:1", "text_uthmani": "Arabic", "translations": [{"resource_id": 85, "text": "Different translation"}]})

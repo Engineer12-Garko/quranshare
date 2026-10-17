@@ -211,6 +211,15 @@ function toggleSaved(type, id, title) {
   setSaved(saved);
   return idx < 0;
 }
+function saveVerse(verse) {
+  const id = String(verse.verse_key);
+  const saved = getSaved();
+  const index = saved.findIndex(item => item.type === 'verse' && item.id === id);
+  if (index >= 0) saved.splice(index, 1);
+  else saved.push({ type: 'verse', id, title: `Qur'an ${id}`, arabic: verse.arabic, translation: verse.translation, translation_source: verse.translation_source, chapter_name: verse.chapter_name, chapter_name_arabic: verse.chapter_name_arabic });
+  setSaved(saved);
+  return index < 0;
+}
 
 function getLegacySaved() {
   try { return JSON.parse(localStorage.getItem('tadabbur_saved') || '[]'); } catch { return []; }
@@ -296,6 +305,7 @@ const ROUTES = {
   '/home':   renderHome,
   '/videos': renderVideos,
   '/duas':   renderDuas,
+  '/quran':  renderQuran,
   '/saved':  renderSaved,
   '/settings': renderSettings,
   '/dashboard': renderHome,
@@ -325,7 +335,14 @@ function clearUser() {
 function navigate(path) { window.location.hash = path; }
 
 async function route() {
-  const hash = window.location.hash.slice(1) || '/';
+  const rawHash = window.location.hash.slice(1) || '/';
+  const [hash, query = ''] = rawHash.split('?', 2);
+  const queryValues = Object.fromEntries(query.split('&').filter(Boolean).map(pair => {
+    const [key, value = ''] = pair.split('=');
+    try { return [decodeURIComponent(key.replace(/\+/g, ' ')), decodeURIComponent(value.replace(/\+/g, ' '))]; }
+    catch { return [key, value]; }
+  }));
+  _routeParams = { get: key => queryValues[key] ?? null };
   const handler = ROUTES[hash] || renderSplash;
   const app = document.getElementById('app');
   try { await handler(app); }
@@ -334,6 +351,7 @@ async function route() {
     app.innerHTML = `<div class="page"><div class="empty-state"><p>${escHtml(e.message)}</p><a href="#/home" class="btn btn-primary">Go Home</a></div></div>`;
   }
 }
+let _routeParams = { get: () => null };
 window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', route);
 
@@ -353,6 +371,7 @@ function navHtml(active) {
     { href: '#/home',    icon: 'home',          label: 'Home' },
     { href: '#/videos',  icon: 'movie',         label: 'Videos' },
     { href: '#/duas',    icon: 'self_improvement', label: "Du'as" },
+    { href: '#/quran',   icon: 'menu_book',       label: "Qur'an" },
     { href: '#/saved',   icon: 'bookmark',      label: 'Saved' },
   ];
   const links = items.map(i => `
@@ -487,12 +506,101 @@ async function renderHome(app) {
       <div class="verse-card">
         <div class="verse-arabic" dir="rtl" lang="ar" translate="no">${escHtml(verse.arabic)}</div>
         <div class="verse-translation" translate="no">${escHtml(verse.translation)}</div>
-        <div class="verse-ref">Qur'an ${escHtml(verse.verse_key)}</div>
+        <div class="verse-ref">Qur'an ${escHtml(verse.verse_key)}${verse.chapter_name ? ` · ${escHtml(verse.chapter_name)}` : ''}</div>
         ${verse.source ? `<div class="verse-attribution">${escHtml(verse.source)}${verse.translation_source ? ` · Translation: ${escHtml(verse.translation_source)}` : ''}</div>` : ''}
-        <a href="#/videos" class="verse-link">Read & Reflect →</a>
+        <div class="verse-home-actions">
+          <a href="#/quran?chapter=${encodeURIComponent(verse.chapter_id || verse.verse_key.split(':')[0])}&verse=${encodeURIComponent(verse.verse_number || verse.verse_key.split(':')[1])}" class="verse-link">Read & Reflect →</a>
+          <button class="btn btn-outline btn-sm" type="button" onclick="toggleHomeVerse(this)">${isSaved('verse', verse.verse_key) ? '🔖 Saved' : '♡ Save'}</button>
+        </div>
       </div>`;
   } catch (e) {
     app.querySelector('#home-content').innerHTML = `<div class="empty-state"><p>${escHtml(e.message)}</p></div>`;
+  }
+}
+
+function toggleHomeVerse(button) {
+  const card = button.closest('.verse-card');
+  const key = card.querySelector('.verse-ref')?.textContent.match(/^Qur'an\s+(\d{1,3}:\d{1,3})/)?.[1];
+  if (!key) return;
+  const [chapterId] = key.split(':').map(Number);
+  const saved = saveVerse({ verse_key: key, arabic: card.querySelector('.verse-arabic')?.textContent || '', translation: card.querySelector('.verse-translation')?.textContent || '', chapter_name: _quranChapters?.find(c => c.id === chapterId)?.name_simple });
+  button.textContent = saved ? '🔖 Saved' : '♡ Save';
+}
+
+/* ── Qur'an Reader ─────────────────────────────────────────────────────── */
+let _quranChapters = null;
+let _quranRequestGeneration = 0;
+
+function quranVerseCard(verse) {
+  const id = String(verse.verse_key);
+  const saved = isSaved('verse', id);
+  return `<article class="quran-verse-card" id="verse-${escHtml(id.replace(':', '-'))}">
+    <div class="quran-verse-head"><span class="quran-verse-ref">${escHtml(verse.chapter_name || '')} · ${escHtml(id)}</span>
+      <button class="bookmark-btn" type="button" aria-label="${saved ? 'Remove saved' : 'Save'} verse ${escHtml(id)}" onclick="quranToggleVerse('${escHtml(id)}', this)">${saved ? '🔖' : '♡'}</button></div>
+    <div class="verse-arabic" dir="rtl" lang="ar" translate="no">${escHtml(verse.arabic)}</div>
+    <p class="verse-translation">${escHtml(verse.translation)}</p>
+    ${verse.translation_source ? `<div class="verse-attribution">${escHtml(verse.translation_source)}</div>` : ''}
+    <button class="btn btn-outline btn-sm" type="button" onclick="copyQuranVerse('${escHtml(id)}', this)">Copy verse</button>
+  </article>`;
+}
+
+function quranToggleVerse(key, button) {
+  const article = button.closest('.quran-verse-card');
+  const verse = { verse_key: key, arabic: article.querySelector('.verse-arabic')?.textContent || '', translation: article.querySelector('.verse-translation')?.textContent || '', chapter_name: _quranChapters?.find(c => c.id === Number(key.split(':')[0]))?.name_simple };
+  const saved = saveVerse(verse);
+  button.textContent = saved ? '🔖' : '♡';
+  button.setAttribute('aria-label', `${saved ? 'Remove saved' : 'Save'} verse ${key}`);
+}
+
+async function copyQuranVerse(key, button) {
+  const article = button.closest('.quran-verse-card');
+  const text = `${article.querySelector('.verse-arabic')?.textContent || ''}\n${article.querySelector('.verse-translation')?.textContent || ''}\nQur'an ${key}`;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+  } catch { button.textContent = 'Copy unavailable'; }
+  setTimeout(() => { if (button.isConnected) button.textContent = 'Copy verse'; }, 1800);
+}
+
+async function renderQuran(app) {
+  const user = await getUser();
+  if (!user) { navigate('/'); return; }
+  const generation = ++_quranRequestGeneration;
+  let chapterId = Number(_routeParams.get('chapter')) || 1;
+  const targetVerse = Number(_routeParams.get('verse')) || null;
+  app.innerHTML = `${navHtml('#/quran')}<main class="page" id="quran-content"><div class="page-header"><span class="brand">TADABBUR</span></div><h1 class="page-title">Qur'an</h1><p class="page-subtitle">Read and reflect on the Qur'an.</p><div class="empty-state"><p>Loading chapters…</p></div></main>`;
+  const content = app.querySelector('#quran-content');
+  try {
+    _quranChapters = _quranChapters || await API.get('/content/chapters', 3600);
+    if (generation !== _quranRequestGeneration || !content.isConnected) return;
+    if (!_quranChapters.some(chapter => chapter.id === chapterId)) chapterId = _quranChapters[0]?.id || 1;
+    content.innerHTML = `<div class="page-header"><span class="brand">TADABBUR</span></div><h1 class="page-title">Qur'an</h1><p class="page-subtitle">Read and reflect on the Qur'an.</p>
+      <label class="quran-select-label" for="quran-chapter">Choose a surah</label><select class="quran-chapter-select" id="quran-chapter">${_quranChapters.map(c => `<option value="${c.id}" ${c.id === chapterId ? 'selected' : ''}>${c.id}. ${escHtml(c.name_simple)} — ${escHtml(c.translated_name || `${c.verses_count} verses`)}</option>`).join('')}</select>
+      <section id="quran-verses"><div class="empty-state"><p>Loading verses…</p></div></section>`;
+    const select = content.querySelector('#quran-chapter');
+    select.addEventListener('change', () => navigate(`/quran?chapter=${select.value}`));
+    const chapter = _quranChapters.find(c => c.id === chapterId);
+    const initialPage = targetVerse ? Math.floor((targetVerse - 1) / 50) + 1 : 1;
+    const data = await API.get(`/content/chapters/${chapterId}/verses?page=${initialPage}&per_page=50`, 3600);
+    if (generation !== _quranRequestGeneration || !content.isConnected) return;
+    const section = content.querySelector('#quran-verses');
+    section.innerHTML = `<header class="quran-chapter-heading"><div class="quran-chapter-arabic" dir="rtl" lang="ar" translate="no">${escHtml(chapter.name_arabic)}</div><h2>${escHtml(chapter.name_simple)}</h2><p>${escHtml(chapter.translated_name || '')} · ${chapter.verses_count} verses</p></header><div class="quran-verse-list">${data.verses.map(quranVerseCard).join('')}</div>${data.pagination.next_page ? '<button id="quran-load-more" class="btn btn-outline btn-block" type="button">Load more verses</button>' : ''}`;
+    const verseTarget = targetVerse && document.getElementById(`verse-${chapterId}-${targetVerse}`);
+    verseTarget?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const more = section.querySelector('#quran-load-more');
+    if (more) more.addEventListener('click', async () => {
+      more.disabled = true; more.textContent = 'Loading…';
+      try {
+        const next = await API.get(`/content/chapters/${chapterId}/verses?page=${data.pagination.next_page}&per_page=50`, 3600);
+        section.querySelector('.quran-verse-list').insertAdjacentHTML('beforeend', next.verses.map(quranVerseCard).join(''));
+        if (!next.pagination.next_page) more.remove();
+        else { more.disabled = false; more.textContent = 'Load more verses'; }
+      } catch { more.disabled = false; more.textContent = 'Retry loading verses'; }
+    });
+  } catch (error) {
+    if (generation !== _quranRequestGeneration || !content.isConnected) return;
+    content.insertAdjacentHTML('beforeend', `<div class="empty-state"><p>${escHtml(error.message || 'Qur’an content is temporarily unavailable.')}</p><p>Prelive provides only Al-Fatihah and Al-Baqarah. Configure the Production environment for the complete Qur'an.</p></div>`);
   }
 }
 
@@ -753,6 +861,7 @@ async function renderSaved(app) {
   const saved = getSaved();
   const videoItems = saved.filter(s => s.type === 'video');
   const duaItems = saved.filter(s => s.type === 'dua');
+  const verseItems = saved.filter(s => s.type === 'verse');
   const duaMap = Object.fromEntries(DUAS.map(d => [d.id, d]));
   const legacyImportAvailable = getLegacySaved().length > 0 && !localStorage.getItem(`${savedStorageKey()}_legacy_imported`);
 
@@ -789,6 +898,8 @@ async function renderSaved(app) {
       `;
     }).join('');
 
+    const verseCards = verseItems.map(s => `<article class="quran-verse-card"><div class="quran-verse-head"><span class="quran-verse-ref">${escHtml(s.chapter_name || "Qur'an")} · ${escHtml(s.id)}</span><button class="bookmark-btn" aria-label="Remove saved verse" onclick="toggleSaved('verse', '${escHtml(s.id)}'); renderSaved(document.getElementById('app'))">🔖</button></div><div class="verse-arabic" dir="rtl" lang="ar" translate="no">${escHtml(s.arabic || '')}</div><p class="verse-translation">${escHtml(s.translation || '')}</p><div class="saved-actions"><a class="btn btn-primary btn-sm" href="#/quran?chapter=${encodeURIComponent(s.id.split(':')[0])}&verse=${encodeURIComponent(s.id.split(':')[1])}">Read in Qur'an</a></div></article>`).join('');
+
     el.innerHTML = `
       <div class="page-header">
         <span class="brand">TADABBUR</span>
@@ -805,15 +916,16 @@ async function renderSaved(app) {
           <button class="pill">Du'as</button>
         </div>
       </div>
-      ${videoItems.length === 0 && duaItems.length === 0 ? `
+      ${videoItems.length === 0 && duaItems.length === 0 && verseItems.length === 0 ? `
         <div class="empty-state">
           <div class="empty-icon">📖</div>
           <p>No saved reminders yet.</p>
-          <p style="font-size:0.8rem;margin-top:4px;">Bookmark videos and du'as to see them here.</p>
+          <p style="font-size:0.8rem;margin-top:4px;">Bookmark videos, du'as, and verses to see them here.</p>
         </div>
       ` : `
         ${videoItems.length > 0 ? `<div class="section-title">SAVED VIDEOS</div>${videoCards}` : ''}
         ${duaItems.length > 0 ? `<div class="section-title">SAVED DU'AS</div><div class="dua-saved-grid">${duaCards}</div>` : ''}
+        ${verseItems.length > 0 ? `<div class="section-title">SAVED VERSES</div>${verseCards}` : ''}
       `}
     `;
   }

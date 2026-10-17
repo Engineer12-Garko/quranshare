@@ -178,6 +178,19 @@ h1, h2, h3, h4 { color: var(--color-text); line-height: 1.2; }
 .dua-transliteration, .dua-source { margin: 0 0 var(--space-md); color: var(--color-muted); font-size: .82rem; text-align: center; line-height: 1.5; }
 .dua-details-dialog .dua-arabic { font-size: 1.7rem; }
 .verse-attribution { margin: var(--space-sm) 0 var(--space-md); color: var(--color-muted); font-size: .75rem; }
+.verse-home-actions { display: flex; justify-content: center; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
+.quran-select-label { display: block; margin: var(--space-md) 0 var(--space-xs); color: var(--color-muted); font-size: .85rem; font-weight: 700; }
+.quran-chapter-select { width: 100%; padding: 13px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-card); color: var(--color-text); font: inherit; }
+.quran-chapter-heading { text-align: center; padding: var(--space-lg) 0 var(--space-md); }
+.quran-chapter-heading h2 { margin: var(--space-xs) 0; font-size: 1.2rem; }
+.quran-chapter-heading p { color: var(--color-muted); font-size: .82rem; }
+.quran-chapter-arabic { font-family: var(--font-arabic); font-size: 1.7rem; }
+.quran-verse-card { position: relative; margin-bottom: var(--space-md); padding: var(--space-md) var(--space-lg); border-radius: var(--radius-lg); background: var(--color-card); box-shadow: var(--shadow-card); }
+.quran-verse-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.quran-verse-ref { color: var(--color-primary); font-size: .8rem; font-weight: 700; }
+.quran-verse-card .verse-arabic { margin-top: var(--space-sm); font-size: 1.7rem; overflow-wrap: anywhere; }
+.quran-verse-card .verse-translation { text-align: left; }
+#quran-load-more { margin: var(--space-md) 0 var(--space-xl); }
 .legacy-saves-card { margin-bottom: var(--space-md); }
 .legacy-saves-card p { margin-bottom: var(--space-sm); color: var(--color-muted); font-size: .82rem; }
 
