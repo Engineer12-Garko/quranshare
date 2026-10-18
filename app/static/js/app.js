@@ -1441,7 +1441,6 @@ async function renderAdmin(app) {
   if (!user || (user.role !== 'admin' && user.role !== 'curator')) { navigate('/home'); return; }
   app.innerHTML = `${navHtml('')}<div class="page" id="admin-content"><div class="empty-state"><p>Loading...</p></div></div>`;
   try {
-    const syncButton = `<button id="sync-drive" class="btn btn-primary btn-sm">Sync Google Drive</button>`;
     let users = [];
     if (user.role === 'admin') users = await API.get('/admin/users?skip=0&limit=200', 60);
     const userRows = users.map(u => `
@@ -1451,22 +1450,9 @@ async function renderAdmin(app) {
       </div>`).join('');
     app.querySelector('#admin-content').innerHTML = `<div class="page">
       <h1 class="page-title">Admin</h1>
-      <div class="card"><p>Synchronize the video library from Google Drive.</p>${syncButton}<p id="sync-result"></p></div>
+      <div class="card"><p>The video library is synchronized automatically from Google Drive every 15 minutes.</p><p class="settings-desc">No manual action is required. The scheduled sync safely updates new, changed, and removed videos.</p></div>
       ${user.role === 'admin' ? `<h2 class="section-title">USERS</h2>${userRows || '<div class="empty-state"><p>No users found.</p></div>'}` : ''}
     </div>`;
-    app.querySelector('#sync-drive').addEventListener('click', async e => {
-      e.target.disabled = true;
-      try {
-        const result = await API.post('/admin/sync/google-drive');
-        app.querySelector('#sync-result').textContent = result.success
-          ? `Added ${result.added}, updated ${result.updated}, deactivated ${result.deactivated}.`
-          : `${result.error || `Sync incomplete; ${result.failed || 0} failure(s).`} ${(result.errors || []).slice(0, 3).join(' ')}`.trim();
-      } catch (err) {
-        app.querySelector('#sync-result').textContent = err.message;
-      } finally {
-        e.target.disabled = false;
-      }
-    });
   } catch (e) {
     app.querySelector('#admin-content').innerHTML = `<div class="empty-state"><p>${escHtml(e.message)}</p></div>`;
   }

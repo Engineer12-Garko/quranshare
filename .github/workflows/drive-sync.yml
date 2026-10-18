@@ -37,7 +37,11 @@ jobs:
           fi
 
           http_code=$(curl -sS -o sync_response.json -w '%{http_code}' \
+            --connect-timeout 15 \
             --max-time 120 \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 5 \
             -X POST "$SYNC_URL" \
             -H "x-vercel-cron: $CRON_SECRET" \
             -H "Content-Type: application/json")

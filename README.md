@@ -79,11 +79,14 @@ secure-cookie settings are incomplete. The scheduled-sync secret
 (`CRON_SECRET`) is optional at boot — when unset, the sync endpoint
 simply returns `403` and the rest of the app keeps working.
 
-## Scheduled Drive Sync
+## Automatic Drive Sync
 
-The Google Drive → catalog sync runs every 15 minutes via the GitHub
-Actions workflow at `.github/workflows/drive-sync.yml`, which calls
-`POST /api/v1/admin/sync/google-drive-cron`.
+The Google Drive → catalog sync runs automatically every 15 minutes via
+the GitHub Actions workflow at `.github/workflows/drive-sync.yml`, which
+calls `POST /api/v1/admin/sync/google-drive-cron`. The workflow retries
+transient network, provider, and server errors before marking a run as
+failed. No admin action is required when videos are added, changed, or
+removed from Drive.
 
 > Vercel Cron on the **Hobby** plan only supports **once-per-day**
 > schedules, and a more frequent expression fails the entire deployment.
@@ -100,8 +103,9 @@ Set up (once):
 4. Optional: add a repository **variable** `SYNC_URL` to override the
    default endpoint (`https://quranshare-eta.vercel.app/api/v1/admin/sync/google-drive-cron`).
 
-Curators/admins can still run a manual sync via
-`POST /api/v1/admin/sync/google-drive`.
+The authenticated manual endpoint
+`POST /api/v1/admin/sync/google-drive` remains available only as an
+emergency recovery path; it is not needed for normal catalog operation.
 
 ## Quran Foundation Content
 

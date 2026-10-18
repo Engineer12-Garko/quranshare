@@ -76,10 +76,10 @@ def trigger_sync_cron(
         ) from exc
 
 
-# ── Manual Admin Sync ──────────────────────────────────────────────────
+# ── Emergency Manual Sync ─────────────────────────────────────────────
 # Accessible to users with role 'curator' or 'admin'.
 # Requires proper authentication session.
-# For debugging and manual recovery only.
+# For debugging and emergency recovery only; normal updates use the scheduler.
 # Returns a summary: added, updated, deactivated, failed.
 
 @router.post("/sync/google-drive")
@@ -87,11 +87,11 @@ def trigger_sync(
     db: Session = Depends(get_db),
     _: User = Depends(_curator_or_admin),
 ):
-    """Manual Google Drive sync.
+    """Emergency manual Google Drive sync.
 
     Accessible to users with role 'curator' or 'admin'.
     Requires proper authentication session.
-    For debugging and manual recovery only.
+    Normal catalog updates are handled automatically by the scheduler.
     Returns a summary: added, updated, deactivated, failed.
     """
     return sync_drive(db)
