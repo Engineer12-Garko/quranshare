@@ -79,6 +79,9 @@ h1, h2, h3, h4 { color: var(--color-text); line-height: 1.2; }
 /* ── Layout ────────────────────────────────────────────────────────────── */
 .page { width: 100%; padding: calc(var(--space-lg) + var(--safe-top)) var(--space-lg) calc(var(--nav-total-h) + var(--space-xl)); max-width: 680px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; }
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-lg); padding-top: var(--space-md); }
+.settings-heading { display: flex; align-items: center; gap: var(--space-md); min-width: 0; }
+.settings-back { flex-shrink: 0; }
+.settings-back .material-symbols-outlined { font-size: 1.1rem; }
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */
 .card { background: var(--color-card); border-radius: var(--radius-lg); padding: var(--space-lg); box-shadow: var(--shadow-card); }

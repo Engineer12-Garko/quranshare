@@ -1111,7 +1111,13 @@ async function renderSettings(app) {
     if (!el) return;
     el.innerHTML = `
       <div class="page-header">
-        <span class="brand">TADABBUR</span>
+        <div class="settings-heading">
+          <button class="settings-back btn btn-outline btn-sm" type="button" onclick="navigate('/home')" aria-label="Back to home">
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+            <span>Back</span>
+          </button>
+          <span class="brand">TADABBUR</span>
+        </div>
         <div class="gear-icon material-symbols-outlined">settings</div>
       </div>
       <h1 class="page-title">Notification & Reminders</h1>
