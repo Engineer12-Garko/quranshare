@@ -250,17 +250,20 @@ function getSettings() {
     const saved = localStorage.getItem(key);
     if (saved) return JSON.parse(saved);
     const legacy = JSON.parse(localStorage.getItem('tadabbur_settings') || '{}');
-    const migrated = { quranReminder: false, duaReminder: false, reminderTime: '07:00', ...legacy };
+    const migrated = { quranReminder: false, duaReminder: false, darkMode: false, reminderTime: '07:00', ...legacy };
     if (_currentUser?.id) {
       localStorage.setItem(key, JSON.stringify(migrated));
       localStorage.removeItem('tadabbur_settings');
     }
     return migrated;
-  } catch { return { quranReminder: false, duaReminder: false, reminderTime: '07:00' }; }
+  } catch { return { quranReminder: false, duaReminder: false, darkMode: false, reminderTime: '07:00' }; }
 }
 function setSettings(s) {
   const key = _currentUser?.id ? `tadabbur_settings_${_currentUser.id}` : 'tadabbur_settings';
   localStorage.setItem(key, JSON.stringify(s));
+}
+function applyTheme() {
+  document.documentElement.dataset.theme = getSettings().darkMode ? 'dark' : 'light';
 }
 
 let _dailyReminderTimer = null;
@@ -323,11 +326,17 @@ let _currentUser = null;
 
 async function getUser() {
   if (_currentUser) { startDailyReminderScheduler(); return _currentUser; }
-  try { _currentUser = await API.get('/auth/me'); startDailyReminderScheduler(); return _currentUser; }
+  try {
+    _currentUser = await API.get('/auth/me');
+    applyTheme();
+    startDailyReminderScheduler();
+    return _currentUser;
+  }
   catch { return null; }
 }
 function clearUser() {
   _currentUser = null;
+  applyTheme();
   if (_dailyReminderTimer && typeof window.clearInterval === 'function') {
     window.clearInterval(_dailyReminderTimer);
     _dailyReminderTimer = null;
@@ -337,6 +346,7 @@ function clearUser() {
 function navigate(path) { window.location.hash = path; }
 
 async function route() {
+  applyTheme();
   const rawHash = window.location.hash.slice(1) || '/';
   const [hash, query = ''] = rawHash.split('?', 2);
   const queryValues = Object.fromEntries(query.split('&').filter(Boolean).map(pair => {
@@ -1108,6 +1118,14 @@ async function renderSettings(app) {
       <p class="page-subtitle">Choose a local reminder time. Notifications appear only while Tadabbur is open in this browser.</p>
       <div class="section-title">DAILY REMINDERS</div>
       <div class="settings-card">
+        <div class="settings-icon material-symbols-outlined">dark_mode</div>
+        <div class="settings-info">
+          <div class="settings-label">Dark mode</div>
+          <div class="settings-desc">Use a darker color palette for comfortable reading.</div>
+        </div>
+        <button class="toggle ${settings.darkMode ? 'active' : ''}" aria-pressed="${Boolean(settings.darkMode)}" onclick="toggleTheme()" aria-label="Toggle dark mode"></button>
+      </div>
+      <div class="settings-card">
         <div class="settings-icon material-symbols-outlined">notifications</div>
         <div class="settings-info">
           <div class="settings-label">Daily Qur'an Reminder</div>
@@ -1148,6 +1166,14 @@ async function renderSettings(app) {
   }
 
   renderSettings();
+}
+
+function toggleTheme() {
+  const settings = getSettings();
+  settings.darkMode = !settings.darkMode;
+  setSettings(settings);
+  applyTheme();
+  renderSettings(document.getElementById('app'));
 }
 
 async function toggleSetting(key) {
